@@ -633,6 +633,23 @@
   line-height: 1.4;
 }
 
+.route-elev-retry {
+  display: inline-block;
+  margin-left: 6px;
+  border: none;
+  background: #eef2f0;
+  color: #2e7d32;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.route-elev-retry:hover {
+  background: #e0e9e3;
+}
+
 .elev-chart {
   display: block;
 }

@@ -39,6 +39,7 @@ export default function RouteTool({ map }: RouteToolProps) {
   const [profile, setProfile] = useState<ElevationProfileData | null>(null)
   const [elevLoading, setElevLoading] = useState(false)
   const [elevError, setElevError] = useState(false)
+  const [elevReloadKey, setElevReloadKey] = useState(0)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const openRef = useRef(open)
   openRef.current = open
@@ -140,7 +141,7 @@ export default function RouteTool({ map }: RouteToolProps) {
       controller.abort()
       clearTimeout(timer)
     }
-  }, [waypoints])
+  }, [waypoints, elevReloadKey])
 
   const distance = pathLength(waypoints)
 
@@ -217,7 +218,18 @@ export default function RouteTool({ map }: RouteToolProps) {
 
           <div className="route-elev">
             {elevLoading && <div className="route-elev-msg">Loading elevation&hellip;</div>}
-            {elevError && <div className="route-elev-msg">Elevation unavailable</div>}
+            {elevError && (
+              <div className="route-elev-msg">
+                Elevation unavailable
+                <button
+                  type="button"
+                  className="route-elev-retry"
+                  onClick={() => setElevReloadKey((k) => k + 1)}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {!elevLoading && !elevError && profile && <ElevationProfile data={profile} />}
             {!elevLoading && !elevError && !profile && waypoints.length < 2 && (
               <div className="route-elev-msg">Add at least 2 points for an elevation profile</div>
