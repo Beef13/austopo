@@ -96,6 +96,41 @@ export function downloadTrackGpx(
   triggerDownload(buildTrackGpx(points), filename)
 }
 
+// A named point of interest for GPX waypoint export.
+export type GpxWaypoint = { lng: number; lat: number; name: string }
+
+export function buildWaypointGpx(
+  pins: GpxWaypoint[],
+  name = 'AusTopo pins',
+): string {
+  const now = new Date().toISOString()
+  const wpts = pins
+    .map(
+      (p) =>
+        `  <wpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}">\n` +
+        `    <name>${escapeXml(p.name)}</name>\n` +
+        `  </wpt>`,
+    )
+    .join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="AusTopo" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${escapeXml(name)}</name>
+    <time>${now}</time>
+  </metadata>
+${wpts}
+</gpx>
+`
+}
+
+export function downloadWaypointGpx(
+  pins: GpxWaypoint[],
+  filename = 'austopo-pins.gpx',
+): void {
+  triggerDownload(buildWaypointGpx(pins), filename)
+}
+
 function triggerDownload(gpx: string, filename: string): void {
   const blob = new Blob([gpx], { type: 'application/gpx+xml' })
   const url = URL.createObjectURL(blob)

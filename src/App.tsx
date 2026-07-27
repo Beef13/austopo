@@ -8,6 +8,7 @@ import CoordinateReadout from './components/CoordinateReadout'
 import ShareControl from './components/ShareControl'
 import OfflinePanel from './components/OfflinePanel'
 import RouteTool from './components/RouteTool'
+import PinTool from './components/PinTool'
 import TrackRecorder from './components/TrackRecorder'
 import UpdatePrompt from './components/UpdatePrompt'
 import type { BaseLayerId } from './lib/mapStyle'
@@ -56,6 +57,13 @@ export default function App() {
 
       <MapView onReady={setMap} />
 
+      {!map && (
+        <div className="map-loading" role="status">
+          <span className="map-loading-spinner" aria-hidden="true" />
+          <span>Loading map&hellip;</span>
+        </div>
+      )}
+
       <div className="center-crosshair" aria-hidden="true" />
 
       {!online && (
@@ -68,6 +76,7 @@ export default function App() {
         <>
           <div className="floating-controls">
             <RouteTool map={map} />
+            <PinTool map={map} />
             <TrackRecorder map={map} />
             <OfflinePanel map={map} layer={layer} />
             <LayerSwitcher map={map} active={layer} onChange={setLayer} />

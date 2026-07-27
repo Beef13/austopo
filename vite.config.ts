@@ -38,7 +38,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern:
-              /^https:\/\/([abc]\.tile\.opentopomap\.org|server\.arcgisonline\.com)\/.*/i,
+              /^https:\/\/([abc]\.tile\.opentopomap\.org|server\.arcgisonline\.com|services\.ga\.gov\.au|s3\.amazonaws\.com\/elevation-tiles-prod)\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',
@@ -54,4 +54,19 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    chunkSizeWarningLimit: 1600,
+    rollupOptions: {
+      output: {
+        // Split large, rarely-changing dependencies into their own chunks so
+        // they stay cached across app deploys.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('maplibre-gl')) return 'maplibre'
+          if (id.includes('proj4')) return 'proj4'
+          if (id.includes('react')) return 'react'
+        },
+      },
+    },
+  },
 })
