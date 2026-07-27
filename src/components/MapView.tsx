@@ -7,6 +7,7 @@ import {
   AUSTRALIA_MAX_BOUNDS,
   OPENTOPO_STYLE,
 } from '../lib/mapStyle'
+import { readViewFromUrl } from '../lib/urlState'
 
 type MapViewProps = {
   onReady: (map: maplibregl.Map) => void
@@ -20,11 +21,17 @@ export default function MapView({ onReady }: MapViewProps) {
   useEffect(() => {
     if (!containerRef.current) return
 
+    const initial = readViewFromUrl()
+    const center: [number, number] =
+      initial.lng !== undefined && initial.lat !== undefined
+        ? [initial.lng, initial.lat]
+        : AUSTRALIA_CENTER
+
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: OPENTOPO_STYLE,
-      center: AUSTRALIA_CENTER,
-      zoom: AUSTRALIA_INITIAL_ZOOM,
+      center,
+      zoom: initial.zoom ?? AUSTRALIA_INITIAL_ZOOM,
       maxBounds: AUSTRALIA_MAX_BOUNDS,
       maxZoom: 18,
       attributionControl: false,

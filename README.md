@@ -7,10 +7,14 @@ Built as an installable **PWA** so it can grow into offline map downloads and, e
 ## Features
 
 - Full-screen topographic map (OpenTopoMap style) framed on Australia
+- Topo / Satellite base-layer switcher (Esri World Imagery)
 - "Locate me" with live GPS tracking and a follow-the-dot mode
 - Place search across Australia (OpenStreetMap Nominatim)
+- Live centre-coordinate readout (lat/long + MGA/UTM grid reference), tap to copy
+- Share this location: a link that restores the exact view (centre, zoom, layer)
+- Offline maps: download the current area and use it with no signal
 - Zoom + metric scale controls
-- Installable to a phone home screen (PWA)
+- Installable to a phone home screen (PWA), with a "new version" reload prompt
 
 ## Tech stack
 
@@ -56,8 +60,16 @@ src/
   App.tsx              # app shell
 ```
 
+## Offline maps
+
+Open the download control (bottom-right), choose a detail level, and download the
+current view. Tiles are fetched through the service worker and cached
+(`CacheFirst`, cache name `map-tiles`), so any area you've downloaded — or simply
+viewed — renders with no connection. Downloads are capped (4,000 tiles) to respect
+tile-server fair-use; zoom in or lower the detail for large areas.
+
 ## Roadmap
 
-- **Offline maps** — download regions as PMTiles for offline use (the "killer feature")
-- **Routes** — draw/save routes with distance and elevation profiles
+- **Routes** — draw/save routes with distance and elevation profiles, GPX import/export
+- **Bigger offline regions** — switch to PMTiles archives for whole-state downloads
 - **Native app** — reuse this logic with MapLibre React Native, or wrap the PWA

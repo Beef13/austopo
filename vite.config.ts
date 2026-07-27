@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'icon.svg'],
       manifest: {
         name: 'AusTopo — Australian Topographic Maps',
@@ -29,10 +29,28 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // App shell is precached. Map tiles are intentionally NOT precached
-        // (they're external + fair-use); offline tile downloads come later.
+        // The app shell is precached at build time.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // Map tiles are cached at runtime (CacheFirst) so any region you've
+        // viewed OR explicitly downloaded is available offline. This same cache
+        // is populated by the "download for offline" feature.
+        runtimeCaching: [
+          {
+            urlPattern:
+              /^https:\/\/([abc]\.tile\.opentopomap\.org|server\.arcgisonline\.com)\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'map-tiles',
+              expiration: {
+                maxEntries: 8000,
+                maxAgeSeconds: 60 * 60 * 24 * 90, // 90 days
+                purgeOnQuotaError: true,
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+        ],
       },
     }),
   ],

@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useEffect } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { BaseLayerId } from '../lib/mapStyle'
 
 type LayerSwitcherProps = {
   map: maplibregl.Map
+  active: BaseLayerId
+  onChange: (id: BaseLayerId) => void
 }
 
 const OPTIONS: { id: BaseLayerId; label: string }[] = [
@@ -11,20 +13,18 @@ const OPTIONS: { id: BaseLayerId; label: string }[] = [
   { id: 'satellite', label: 'Satellite' },
 ]
 
-export default function LayerSwitcher({ map }: LayerSwitcherProps) {
-  const [active, setActive] = useState<BaseLayerId>('opentopomap')
-
-  const select = (id: BaseLayerId) => {
-    if (id === active) return
+export default function LayerSwitcher({ map, active, onChange }: LayerSwitcherProps) {
+  // Keep the map's layer visibility in sync with the active base layer
+  // (also applies the initial layer when restored from a shared URL).
+  useEffect(() => {
     for (const opt of OPTIONS) {
       map.setLayoutProperty(
         opt.id,
         'visibility',
-        opt.id === id ? 'visible' : 'none',
+        opt.id === active ? 'visible' : 'none',
       )
     }
-    setActive(id)
-  }
+  }, [map, active])
 
   return (
     <div className="layer-switcher" role="group" aria-label="Base map layer">
@@ -33,7 +33,7 @@ export default function LayerSwitcher({ map }: LayerSwitcherProps) {
           key={opt.id}
           type="button"
           className={`layer-option${active === opt.id ? ' is-active' : ''}`}
-          onClick={() => select(opt.id)}
+          onClick={() => onChange(opt.id)}
           aria-pressed={active === opt.id}
         >
           {opt.label}
