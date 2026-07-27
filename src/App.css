@@ -805,6 +805,171 @@
   color: #223028;
 }
 
+/* ---------- Track recorder ---------- */
+.track {
+  position: relative;
+}
+
+.track-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+.track-btn:hover {
+  background: #fdf3f2;
+}
+
+.track-icon-rec {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #e5322d;
+}
+
+.track-icon-stop {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: #e5322d;
+}
+
+.track-btn.is-recording {
+  background: #e5322d;
+  animation: track-pulse 1.6s ease-out infinite;
+}
+
+.track-btn.is-recording .track-icon-stop {
+  background: #fff;
+}
+
+@keyframes track-pulse {
+  0% {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(229, 50, 45, 0.5);
+  }
+  70% {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), 0 0 0 12px rgba(229, 50, 45, 0);
+  }
+  100% {
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(229, 50, 45, 0);
+  }
+}
+
+.track-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 240px;
+  background: #fff;
+  color: #223028;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+
+.track-panel-head {
+  margin-bottom: 10px;
+}
+
+.track-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.track-rec-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e5322d;
+  animation: track-blink 1.2s step-start infinite;
+}
+
+@keyframes track-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.track-stats {
+  display: flex;
+  gap: 8px;
+}
+
+.track-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #eef4fb;
+  border-radius: 10px;
+  padding: 8px 4px;
+}
+
+.track-stat-val {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.track-stat-key {
+  font-size: 11px;
+  color: #6a7d8f;
+  margin-top: 2px;
+}
+
+.track-error {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #b23b36;
+  text-align: center;
+}
+
+.track-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.track-actions button {
+  flex: 1;
+  border: none;
+  background: #eef2f0;
+  color: #223028;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.track-actions button:hover:not(:disabled) {
+  background: #e0e9e3;
+}
+
+.track-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.track-stop-btn {
+  background: #e5322d !important;
+  color: #fff !important;
+}
+
+.track-stop-btn:hover {
+  background: #cf2c27 !important;
+}
+
 /* ---------- Offline badge ---------- */
 .offline-badge {
   position: absolute;

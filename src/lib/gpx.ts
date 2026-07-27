@@ -51,7 +51,53 @@ export function parseGpx(xml: string): LngLat[] {
 }
 
 export function downloadGpx(points: LngLat[], filename = 'austopo-route.gpx'): void {
-  const blob = new Blob([buildGpx(points)], { type: 'application/gpx+xml' })
+  triggerDownload(buildGpx(points), filename)
+}
+
+// A recorded GPS track point, with optional elevation and timestamp.
+export type TrackPoint = { lng: number; lat: number; ele?: number; time?: number }
+
+export function buildTrackGpx(points: TrackPoint[], name = 'AusTopo track'): string {
+  const now = new Date().toISOString()
+  const trkpts = points
+    .map((p) => {
+      const parts = [`      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}">`]
+      if (typeof p.ele === 'number' && isFinite(p.ele)) {
+        parts.push(`        <ele>${p.ele.toFixed(1)}</ele>`)
+      }
+      if (typeof p.time === 'number' && isFinite(p.time)) {
+        parts.push(`        <time>${new Date(p.time).toISOString()}</time>`)
+      }
+      parts.push('      </trkpt>')
+      return parts.join('\n')
+    })
+    .join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="AusTopo" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>${escapeXml(name)}</name>
+    <time>${now}</time>
+  </metadata>
+  <trk>
+    <name>${escapeXml(name)}</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>
+`
+}
+
+export function downloadTrackGpx(
+  points: TrackPoint[],
+  filename = 'austopo-track.gpx',
+): void {
+  triggerDownload(buildTrackGpx(points), filename)
+}
+
+function triggerDownload(gpx: string, filename: string): void {
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
