@@ -7,6 +7,7 @@ import LayerSwitcher from './components/LayerSwitcher'
 import CoordinateReadout from './components/CoordinateReadout'
 import ShareControl from './components/ShareControl'
 import OfflinePanel from './components/OfflinePanel'
+import RouteTool from './components/RouteTool'
 import UpdatePrompt from './components/UpdatePrompt'
 import type { BaseLayerId } from './lib/mapStyle'
 import { buildViewQuery, readViewFromUrl } from './lib/urlState'
@@ -65,6 +66,7 @@ export default function App() {
       {map && (
         <>
           <div className="floating-controls">
+            <RouteTool map={map} />
             <OfflinePanel map={map} layer={layer} />
             <LayerSwitcher map={map} active={layer} onChange={setLayer} />
             <LocateControl map={map} />
