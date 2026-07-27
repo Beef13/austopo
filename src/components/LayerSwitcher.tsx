@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
-import type { BaseLayerId } from '../lib/mapStyle'
+import { BASE_LAYER_OPTIONS, type BaseLayerId } from '../lib/mapStyle'
 
 type LayerSwitcherProps = {
   map: maplibregl.Map
@@ -8,11 +8,7 @@ type LayerSwitcherProps = {
   onChange: (id: BaseLayerId) => void
 }
 
-const OPTIONS: { id: BaseLayerId; label: string }[] = [
-  { id: 'opentopomap', label: 'Topo' },
-  { id: 'satellite', label: 'Satellite' },
-  { id: 'gatopo', label: 'GA Topo' },
-]
+const OPTIONS = BASE_LAYER_OPTIONS
 
 export default function LayerSwitcher({ map, active, onChange }: LayerSwitcherProps) {
   const [relief, setRelief] = useState(false)

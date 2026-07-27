@@ -1,4 +1,4 @@
-import type { BaseLayerId } from './mapStyle'
+import { BASE_LAYER_IDS, type BaseLayerId } from './mapStyle'
 
 // URL query state lets a view be shared and restored, e.g.
 //   ?lat=-33.8568&lng=151.2153&z=15&layer=satellite
@@ -17,8 +17,8 @@ export function readViewFromUrl(search = window.location.search): ViewState {
   const zoom = parseFloat(params.get('z') ?? '')
   const rawLayer = params.get('layer')
   const layer: BaseLayerId | undefined =
-    rawLayer === 'satellite' || rawLayer === 'opentopomap' || rawLayer === 'gatopo'
-      ? rawLayer
+    rawLayer && (BASE_LAYER_IDS as string[]).includes(rawLayer)
+      ? (rawLayer as BaseLayerId)
       : undefined
 
   return {

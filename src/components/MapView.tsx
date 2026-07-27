@@ -47,9 +47,23 @@ export default function MapView({ onReady }: MapViewProps) {
       'bottom-right',
     )
 
-    map.on('load', () => onReadyRef.current(map))
+    // Surface the UI as soon as the map is ready. Normally this is the 'load'
+    // event, but if the default layer's tiles can't be fetched (bad API key,
+    // offline first-run, provider outage) 'load' may never fire — so a fallback
+    // timeout guarantees the controls still appear instead of a stuck splash.
+    let signalled = false
+    const ready = () => {
+      if (signalled) return
+      signalled = true
+      onReadyRef.current(map)
+    }
+    map.on('load', ready)
+    const fallback = window.setTimeout(ready, 4000)
 
-    return () => map.remove()
+    return () => {
+      window.clearTimeout(fallback)
+      map.remove()
+    }
   }, [])
 
   return <div ref={containerRef} className="map-container" />

@@ -38,7 +38,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern:
-              /^https:\/\/([abc]\.tile\.opentopomap\.org|server\.arcgisonline\.com|services\.ga\.gov\.au|s3\.amazonaws\.com\/elevation-tiles-prod)\/.*/i,
+              /^https:\/\/(api\.maptiler\.com|[abc]\.tile\.opentopomap\.org|server\.arcgisonline\.com|services\.ga\.gov\.au|s3\.amazonaws\.com\/elevation-tiles-prod)\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',

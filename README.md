@@ -33,6 +33,21 @@ npm run build    # production build into dist/
 npm run preview  # preview the production build
 ```
 
+### Configuration — MapTiler basemap (recommended)
+
+The primary **Topo** layer uses [MapTiler Outdoor](https://www.maptiler.com/maps/outdoor/)
+for fast, high-detail tiles. It needs a free API key:
+
+1. Create a key at <https://cloud.maptiler.com/account/keys/>.
+2. In the MapTiler dashboard, **restrict the key** to your domains
+   (e.g. `austopo.vercel.app` and `localhost`) — it ships to the browser.
+3. Copy `.env.example` to `.env` and set `VITE_MAPTILER_KEY=your_key`.
+4. For production (Vercel): add `VITE_MAPTILER_KEY` as an Environment Variable,
+   then redeploy.
+
+Without a key the app still runs and falls back to OpenTopoMap as the default
+"Topo" layer — no configuration required.
+
 ## Data sources & attribution
 
 This app relies on openly licensed data. Attribution is shown on the map and is **required** by the licenses:
@@ -43,7 +58,8 @@ This app relies on openly licensed data. Attribution is shown on the map and is 
 
 ## Usage-policy notes (important before going live)
 
-- **OpenTopoMap tiles** — the public tile server (`tile.opentopomap.org`) is **fair-use only**. Fine for development and light traffic, but before shipping to real users you should self-host tiles or serve a [PMTiles](https://protomaps.com/) archive. See `src/lib/mapStyle.ts`.
+- **MapTiler tiles** — used for the default Topo layer when `VITE_MAPTILER_KEY` is set. Covered by MapTiler's free tier for light use; check your usage in their dashboard and restrict the key to your domains.
+- **OpenTopoMap tiles** — the public tile server (`tile.opentopomap.org`) is **fair-use only**, so it's now a fallback / alternative layer rather than the production default. Fine for development and light traffic. See `src/lib/mapStyle.ts`.
 - **Nominatim** — limited to ~1 request/second and requires an identifying request. Search input is debounced (600 ms) and bounded to Australia (`countrycodes=au`) to stay within policy. For heavier use, run your own Nominatim instance.
 
 ## Project structure

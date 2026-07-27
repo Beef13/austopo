@@ -11,7 +11,7 @@ import RouteTool from './components/RouteTool'
 import PinTool from './components/PinTool'
 import TrackRecorder from './components/TrackRecorder'
 import UpdatePrompt from './components/UpdatePrompt'
-import type { BaseLayerId } from './lib/mapStyle'
+import { DEFAULT_BASE_LAYER, type BaseLayerId } from './lib/mapStyle'
 import { buildViewQuery, readViewFromUrl } from './lib/urlState'
 import { useOnlineStatus } from './lib/useOnlineStatus'
 import './App.css'
@@ -19,7 +19,7 @@ import './App.css'
 export default function App() {
   const [map, setMap] = useState<maplibregl.Map | null>(null)
   const [layer, setLayer] = useState<BaseLayerId>(
-    () => readViewFromUrl().layer ?? 'opentopomap',
+    () => readViewFromUrl().layer ?? DEFAULT_BASE_LAYER,
   )
   const online = useOnlineStatus()
   const layerRef = useRef(layer)
