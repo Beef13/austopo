@@ -8,6 +8,11 @@ const OPENTOPO_ATTRIBUTION =
   'Map data: &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors, SRTM | ' +
   'Map style: &copy; <a href="https://opentopomap.org" target="_blank" rel="noreferrer">OpenTopoMap</a> (CC-BY-SA)'
 
+const SATELLITE_ATTRIBUTION =
+  'Imagery &copy; <a href="https://www.esri.com" target="_blank" rel="noreferrer">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community'
+
+export type BaseLayerId = 'opentopomap' | 'satellite'
+
 export const OPENTOPO_STYLE: StyleSpecification = {
   version: 8,
   sources: {
@@ -23,12 +28,28 @@ export const OPENTOPO_STYLE: StyleSpecification = {
       maxzoom: 17,
       attribution: OPENTOPO_ATTRIBUTION,
     },
+    satellite: {
+      type: 'raster',
+      tiles: [
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 19,
+      attribution: SATELLITE_ATTRIBUTION,
+    },
   },
   layers: [
     {
       id: 'opentopomap',
       type: 'raster',
       source: 'opentopomap',
+    },
+    {
+      id: 'satellite',
+      type: 'raster',
+      source: 'satellite',
+      layout: { visibility: 'none' },
     },
   ],
 }

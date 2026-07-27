@@ -26,7 +26,7 @@ export default function MapView({ onReady }: MapViewProps) {
       center: AUSTRALIA_CENTER,
       zoom: AUSTRALIA_INITIAL_ZOOM,
       maxBounds: AUSTRALIA_MAX_BOUNDS,
-      maxZoom: 17,
+      maxZoom: 18,
       attributionControl: false,
     })
 
