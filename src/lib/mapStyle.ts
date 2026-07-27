@@ -11,7 +11,10 @@ const OPENTOPO_ATTRIBUTION =
 const SATELLITE_ATTRIBUTION =
   'Imagery &copy; <a href="https://www.esri.com" target="_blank" rel="noreferrer">Esri</a>, Maxar, Earthstar Geographics, and the GIS User Community'
 
-export type BaseLayerId = 'opentopomap' | 'satellite'
+const GA_ATTRIBUTION =
+  '&copy; <a href="https://www.ga.gov.au" target="_blank" rel="noreferrer">Geoscience Australia</a> (CC-BY 4.0)'
+
+export type BaseLayerId = 'opentopomap' | 'satellite' | 'gatopo'
 
 export const OPENTOPO_STYLE: StyleSpecification = {
   version: 8,
@@ -38,6 +41,30 @@ export const OPENTOPO_STYLE: StyleSpecification = {
       maxzoom: 19,
       attribution: SATELLITE_ATTRIBUTION,
     },
+    gatopo: {
+      type: 'raster',
+      // ArcGIS cached tiles use /tile/{z}/{y}/{x}. Reliable to zoom 12, so we
+      // cap maxzoom and let MapLibre overzoom for closer views.
+      tiles: [
+        'https://services.ga.gov.au/gis/rest/services/Topographic_Base_Map/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 12,
+      attribution: GA_ATTRIBUTION,
+    },
+    'terrain-dem': {
+      type: 'raster-dem',
+      tiles: [
+        'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+      ],
+      encoding: 'terrarium',
+      tileSize: 256,
+      minzoom: 0,
+      maxzoom: 15,
+      attribution:
+        'Terrain: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">Mapzen / AWS Open Data</a>',
+    },
   },
   layers: [
     {
@@ -50,6 +77,19 @@ export const OPENTOPO_STYLE: StyleSpecification = {
       type: 'raster',
       source: 'satellite',
       layout: { visibility: 'none' },
+    },
+    {
+      id: 'gatopo',
+      type: 'raster',
+      source: 'gatopo',
+      layout: { visibility: 'none' },
+    },
+    {
+      id: 'hillshade',
+      type: 'hillshade',
+      source: 'terrain-dem',
+      layout: { visibility: 'none' },
+      paint: { 'hillshade-exaggeration': 0.45 },
     },
   ],
 }

@@ -17,7 +17,9 @@ export function readViewFromUrl(search = window.location.search): ViewState {
   const zoom = parseFloat(params.get('z') ?? '')
   const rawLayer = params.get('layer')
   const layer: BaseLayerId | undefined =
-    rawLayer === 'satellite' || rawLayer === 'opentopomap' ? rawLayer : undefined
+    rawLayer === 'satellite' || rawLayer === 'opentopomap' || rawLayer === 'gatopo'
+      ? rawLayer
+      : undefined
 
   return {
     lat: Number.isFinite(lat) ? lat : undefined,

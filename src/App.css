@@ -220,10 +220,18 @@
   color: #405048;
   font-size: 13px;
   font-weight: 600;
-  padding: 7px 14px;
+  padding: 7px 12px;
   border-radius: 999px;
   cursor: pointer;
+  white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
+}
+
+.layer-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 2px;
+  background: #e2e9e4;
 }
 
 .layer-option:hover {
