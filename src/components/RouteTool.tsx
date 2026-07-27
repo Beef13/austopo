@@ -4,6 +4,13 @@ import type { Feature, FeatureCollection } from 'geojson'
 import { formatDistance, formatElevation, pathLength, type LngLat } from '../lib/geo'
 import { fetchElevationProfile, type ElevationProfileData } from '../lib/elevation'
 import { downloadGpx, parseGpx } from '../lib/gpx'
+import {
+  deleteRoute,
+  listRoutes,
+  renameRoute,
+  saveRoute,
+  type SavedRoute,
+} from '../lib/savedRoutes'
 import ElevationProfile from './ElevationProfile'
 
 type RouteToolProps = {
@@ -40,6 +47,7 @@ export default function RouteTool({ map }: RouteToolProps) {
   const [elevLoading, setElevLoading] = useState(false)
   const [elevError, setElevError] = useState(false)
   const [elevReloadKey, setElevReloadKey] = useState(0)
+  const [saved, setSaved] = useState<SavedRoute[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const openRef = useRef(open)
   openRef.current = open
@@ -270,10 +278,48 @@ export default function RouteTool({ map }: RouteToolProps) {
     }
   }, [waypoints, elevReloadKey])
 
+  // Refresh the saved-route list whenever the panel is opened.
+  useEffect(() => {
+    if (open) setSaved(listRoutes())
+  }, [open])
+
   const distance = pathLength(waypoints)
+
+  const fitToWaypoints = (points: LngLat[]) => {
+    if (points.length < 2) return
+    const bounds = points.reduce(
+      (b, p) => b.extend(p),
+      new maplibregl.LngLatBounds(points[0], points[0]),
+    )
+    map.fitBounds(bounds, { padding: 60, duration: 800 })
+  }
 
   const undo = () => setWaypoints((prev) => prev.slice(0, -1))
   const clear = () => setWaypoints([])
+
+  const onSave = () => {
+    if (waypoints.length < 2) return
+    const suggested = `Route ${formatDistance(distance)}`
+    const name = window.prompt('Name this route', suggested)
+    if (name === null) return
+    setSaved(saveRoute(name, waypoints))
+  }
+
+  const onLoad = (route: SavedRoute) => {
+    setWaypoints(route.waypoints)
+    fitToWaypoints(route.waypoints)
+  }
+
+  const onRename = (route: SavedRoute) => {
+    const name = window.prompt('Rename route', route.name)
+    if (name === null) return
+    setSaved(renameRoute(route.id, name))
+  }
+
+  const onDelete = (route: SavedRoute) => {
+    if (!window.confirm(`Delete "${route.name}"?`)) return
+    setSaved(deleteRoute(route.id))
+  }
 
   const onImportClick = () => fileInputRef.current?.click()
 
@@ -285,11 +331,7 @@ export default function RouteTool({ map }: RouteToolProps) {
       const text = await file.text()
       const points = parseGpx(text)
       setWaypoints(points)
-      const bounds = points.reduce(
-        (b, p) => b.extend(p),
-        new maplibregl.LngLatBounds(points[0], points[0]),
-      )
-      map.fitBounds(bounds, { padding: 60, duration: 800 })
+      fitToWaypoints(points)
     } catch (err) {
       alert((err as Error).message)
     }
@@ -381,6 +423,56 @@ export default function RouteTool({ map }: RouteToolProps) {
               Export
             </button>
           </div>
+
+          <button
+            type="button"
+            className="route-save"
+            onClick={onSave}
+            disabled={waypoints.length < 2}
+          >
+            Save route
+          </button>
+
+          {saved.length > 0 && (
+            <div className="route-saved">
+              <div className="route-saved-title">Saved routes</div>
+              <ul className="route-saved-list">
+                {saved.map((r) => (
+                  <li key={r.id} className="route-saved-item">
+                    <button
+                      type="button"
+                      className="route-saved-load"
+                      onClick={() => onLoad(r)}
+                      title="Load this route"
+                    >
+                      <span className="route-saved-name">{r.name}</span>
+                      <span className="route-saved-meta">
+                        {r.waypoints.length} pts
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      className="route-saved-icon"
+                      onClick={() => onRename(r)}
+                      title="Rename"
+                      aria-label={`Rename ${r.name}`}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      type="button"
+                      className="route-saved-icon"
+                      onClick={() => onDelete(r)}
+                      title="Delete"
+                      aria-label={`Delete ${r.name}`}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <input
             ref={fileInputRef}

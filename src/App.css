@@ -702,6 +702,109 @@
   cursor: not-allowed;
 }
 
+.route-save {
+  width: 100%;
+  margin-top: 8px;
+  border: none;
+  background: #2e7d32;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.route-save:hover:not(:disabled) {
+  background: #276b2b;
+}
+
+.route-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.route-saved {
+  margin-top: 12px;
+  border-top: 1px solid #e7eeea;
+  padding-top: 10px;
+}
+
+.route-saved-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a9a90;
+  margin-bottom: 6px;
+}
+
+.route-saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 148px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.route-saved-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.route-saved-load {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: none;
+  background: #f2f7f4;
+  color: #223028;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+}
+
+.route-saved-load:hover {
+  background: #e0e9e3;
+}
+
+.route-saved-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.route-saved-meta {
+  font-size: 11px;
+  color: #8a9a90;
+  flex-shrink: 0;
+}
+
+.route-saved-icon {
+  width: 32px;
+  border: none;
+  background: #f2f7f4;
+  color: #667a70;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.route-saved-icon:hover {
+  background: #e0e9e3;
+  color: #223028;
+}
+
 /* ---------- Offline badge ---------- */
 .offline-badge {
   position: absolute;
