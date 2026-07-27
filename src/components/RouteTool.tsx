@@ -43,6 +43,8 @@ export default function RouteTool({ map }: RouteToolProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const openRef = useRef(open)
   openRef.current = open
+  const waypointsRef = useRef(waypoints)
+  waypointsRef.current = waypoints
 
   // Create the route source + layers once.
   useEffect(() => {
@@ -97,15 +99,140 @@ export default function RouteTool({ map }: RouteToolProps) {
     src?.setData(routeFeatures(waypoints))
   }, [map, waypoints])
 
-  // Add points by clicking the map while the panel (draw mode) is open.
+  // Map interactions while in route mode: tap empty ground to append a point,
+  // tap the line to insert one, drag a point to move it, tap a point to delete.
   useEffect(() => {
-    const onClick = (e: maplibregl.MapMouseEvent) => {
-      if (!openRef.current) return
-      setWaypoints((prev) => [...prev, [e.lngLat.lng, e.lngLat.lat]])
+    const canvas = map.getCanvas()
+    const src = () => map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined
+
+    let dragIndex = -1
+    let moved = false
+    let downXY: maplibregl.Point | null = null
+    let live: LngLat[] | null = null
+
+    const setCursor = (c: string) => {
+      canvas.style.cursor = c
     }
-    map.on('click', onClick)
+    const idleCursor = () => setCursor(openRef.current ? 'crosshair' : '')
+
+    const pointIndexAt = (pt: maplibregl.Point): number => {
+      const feats = map.queryRenderedFeatures(pt, { layers: [POINT_LAYER] })
+      if (feats.length && feats[0].properties) {
+        const idx = feats[0].properties.index
+        return typeof idx === 'number' ? idx : Number(idx)
+      }
+      return -1
+    }
+
+    // Index of the segment (start vertex) nearest to a screen point.
+    const nearestSegment = (pt: maplibregl.Point): number => {
+      const wp = waypointsRef.current
+      let best = 0
+      let bestDist = Infinity
+      for (let i = 0; i < wp.length - 1; i++) {
+        const a = map.project(wp[i])
+        const b = map.project(wp[i + 1])
+        const abx = b.x - a.x
+        const aby = b.y - a.y
+        const len2 = abx * abx + aby * aby || 1
+        let t = ((pt.x - a.x) * abx + (pt.y - a.y) * aby) / len2
+        t = Math.max(0, Math.min(1, t))
+        const dx = a.x + t * abx - pt.x
+        const dy = a.y + t * aby - pt.y
+        const d = dx * dx + dy * dy
+        if (d < bestDist) {
+          bestDist = d
+          best = i
+        }
+      }
+      return best
+    }
+
+    const onEnterPoint = () => {
+      if (openRef.current && dragIndex < 0) setCursor('pointer')
+    }
+    const onLeavePoint = () => {
+      if (dragIndex < 0) idleCursor()
+    }
+
+    const onDown = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      if (!openRef.current) return
+      if ('touches' in e.originalEvent && e.originalEvent.touches.length > 1) return
+      downXY = e.point
+      moved = false
+      const idx = pointIndexAt(e.point)
+      if (idx >= 0) {
+        e.preventDefault()
+        dragIndex = idx
+        live = waypointsRef.current.slice()
+        map.dragPan.disable()
+        setCursor('grabbing')
+      }
+    }
+
+    const onMove = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      if (downXY && (Math.abs(e.point.x - downXY.x) + Math.abs(e.point.y - downXY.y) > 4)) {
+        moved = true
+      }
+      if (dragIndex < 0 || !live) return
+      e.preventDefault()
+      live[dragIndex] = [e.lngLat.lng, e.lngLat.lat]
+      src()?.setData(routeFeatures(live))
+    }
+
+    const onUp = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      // Finish an in-progress point drag.
+      if (dragIndex >= 0) {
+        const idx = dragIndex
+        const committed = live
+        dragIndex = -1
+        live = null
+        map.dragPan.enable()
+        idleCursor()
+        if (moved && committed) setWaypoints(committed)
+        else setWaypoints((prev) => prev.filter((_, i) => i !== idx))
+        downXY = null
+        return
+      }
+      if (!openRef.current) {
+        downXY = null
+        return
+      }
+      // A tap that didn't move: either insert on the line or append.
+      if (!moved) {
+        const onLine = map.queryRenderedFeatures(e.point, { layers: [LINE_LAYER] })
+        if (onLine.length && waypointsRef.current.length >= 2) {
+          const at = nearestSegment(e.point) + 1
+          setWaypoints((prev) => {
+            const next = prev.slice()
+            next.splice(at, 0, [e.lngLat.lng, e.lngLat.lat])
+            return next
+          })
+        } else {
+          setWaypoints((prev) => [...prev, [e.lngLat.lng, e.lngLat.lat]])
+        }
+      }
+      downXY = null
+    }
+
+    map.on('mouseenter', POINT_LAYER, onEnterPoint)
+    map.on('mouseleave', POINT_LAYER, onLeavePoint)
+    map.on('mousedown', onDown)
+    map.on('touchstart', onDown)
+    map.on('mousemove', onMove)
+    map.on('touchmove', onMove)
+    map.on('mouseup', onUp)
+    map.on('touchend', onUp)
+
     return () => {
-      map.off('click', onClick)
+      map.off('mouseenter', POINT_LAYER, onEnterPoint)
+      map.off('mouseleave', POINT_LAYER, onLeavePoint)
+      map.off('mousedown', onDown)
+      map.off('touchstart', onDown)
+      map.off('mousemove', onMove)
+      map.off('touchmove', onMove)
+      map.off('mouseup', onUp)
+      map.off('touchend', onUp)
     }
   }, [map])
 
@@ -194,7 +321,7 @@ export default function RouteTool({ map }: RouteToolProps) {
         <div className="route-panel" role="dialog" aria-label="Route planner">
           <div className="route-panel-head">
             <span className="route-panel-title">Route</span>
-            <span className="route-panel-hint">Tap the map to add points</span>
+            <span className="route-panel-hint">Tap to add · drag to move · tap a point to remove</span>
           </div>
 
           <div className="route-stats">
