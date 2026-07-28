@@ -59,19 +59,13 @@ function fillGaps(values: (number | null)[]): number[] | null {
   return out
 }
 
-export async function fetchElevationProfile(
-  points: LngLat[],
+// Query the Open-Meteo elevation endpoint with retries/backoff. Returns the raw
+// (possibly gappy) elevation array, or throws after exhausting retries.
+async function requestElevations(
+  url: string,
   signal?: AbortSignal,
-): Promise<ElevationProfileData | null> {
-  if (points.length < 2) return null
-
-  const { points: sampled, distances } = sampleAlongPath(points, MAX_SAMPLES)
-  const lats = sampled.map((p) => p[1].toFixed(6)).join(',')
-  const lngs = sampled.map((p) => p[0].toFixed(6)).join(',')
-  const url = `${OPEN_METEO_URL}?latitude=${lats}&longitude=${lngs}`
-
+): Promise<(number | null)[]> {
   let lastError: unknown
-  let raw: (number | null)[] | undefined
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
       const res = await fetchWithTimeout(url, signal)
@@ -83,8 +77,7 @@ export async function fetchElevationProfile(
         throw new Error(`retryable:${res.status}`)
       }
       const data: { elevation?: (number | null)[] } = await res.json()
-      raw = data.elevation
-      break
+      return data.elevation ?? []
     } catch (err) {
       // Caller aborted (new waypoint / unmount): bail immediately.
       if (signal?.aborted || (err as Error).name === 'AbortError') throw err
@@ -94,11 +87,32 @@ export async function fetchElevationProfile(
       }
     }
   }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
 
-  if (!raw) {
-    if (lastError) throw lastError instanceof Error ? lastError : new Error(String(lastError))
-    return null
-  }
+// Elevation (m) at a single point, or null when unavailable.
+export async function fetchPointElevation(
+  point: LngLat,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  const url = `${OPEN_METEO_URL}?latitude=${point[1].toFixed(6)}&longitude=${point[0].toFixed(6)}`
+  const raw = await requestElevations(url, signal)
+  const v = raw[0]
+  return typeof v === 'number' && isFinite(v) ? v : null
+}
+
+export async function fetchElevationProfile(
+  points: LngLat[],
+  signal?: AbortSignal,
+): Promise<ElevationProfileData | null> {
+  if (points.length < 2) return null
+
+  const { points: sampled, distances } = sampleAlongPath(points, MAX_SAMPLES)
+  const lats = sampled.map((p) => p[1].toFixed(6)).join(',')
+  const lngs = sampled.map((p) => p[0].toFixed(6)).join(',')
+  const url = `${OPEN_METEO_URL}?latitude=${lats}&longitude=${lngs}`
+
+  const raw = await requestElevations(url, signal)
   if (raw.length === 0) return null
 
   const elevations = fillGaps(raw)

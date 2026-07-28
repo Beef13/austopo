@@ -6,22 +6,34 @@ Built as an installable **PWA** so it can grow into offline map downloads and, e
 
 ## Features
 
-- Full-screen topographic map (OpenTopoMap style) framed on Australia
-- Topo / Satellite base-layer switcher (Esri World Imagery)
-- "Locate me" with live GPS tracking and a follow-the-dot mode
+**Maps & navigation**
+
+- Full-screen topographic map framed on Australia, panning bounded to the region
+- Base-layer switcher: **Topo** (MapTiler Outdoor when a key is set, else OpenTopoMap), **Satellite** (Esri World Imagery), and **GA Topo** (Geoscience Australia)
+- **Relief** hillshade overlay (terrain shading) toggle
 - Place search across Australia (OpenStreetMap Nominatim)
-- Live centre-coordinate readout (lat/long + MGA/UTM grid reference), tap to copy
+- "Locate me" with live GPS tracking and a follow-the-dot mode
+- Live centre readout: lat/long **+ MGA/UTM grid reference + terrain elevation**, tap to copy
 - Share this location: a link that restores the exact view (centre, zoom, layer)
-- Offline maps: download the current area and use it with no signal
 - Zoom + metric scale controls
+
+**Plan, record & mark**
+
+- **Routes** — tap to add points, drag to move, tap to remove; live distance, ascent/descent, and an elevation profile chart. Save/rename/delete routes and import/export **GPX**.
+- **Track recording** — record a live GPS track (distance, time, points), then save it as a route or export GPX
+- **Pins** — drop, drag, rename and delete named waypoints; export as GPX. Routes and pins persist on the device.
+
+**Offline & install**
+
+- Offline maps: download the current area and use it with no signal
 - Installable to a phone home screen (PWA), with a "new version" reload prompt
 
 ## Tech stack
 
 - [Vite](https://vite.dev/) + React + TypeScript
-- [MapLibre GL JS](https://maplibre.org/) — open-source map renderer (no API keys)
-- [OpenTopoMap](https://opentopomap.org/) raster tiles
-- [Nominatim](https://nominatim.org/) geocoding
+- [MapLibre GL JS](https://maplibre.org/) — open-source map renderer
+- [MapTiler Outdoor](https://www.maptiler.com/maps/outdoor/) / [OpenTopoMap](https://opentopomap.org/) / [Esri](https://www.esri.com/) / [Geoscience Australia](https://www.ga.gov.au/) tiles
+- [Nominatim](https://nominatim.org/) geocoding, [Open-Meteo](https://open-meteo.com/) elevation
 - [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) for the installable PWA
 
 ## Getting started
@@ -67,13 +79,25 @@ This app relies on openly licensed data. Attribution is shown on the map and is 
 ```
 src/
   components/
-    MapView.tsx        # MapLibre map + OpenTopoMap tiles + controls
-    SearchBar.tsx      # debounced Nominatim place search
-    LocateControl.tsx  # GPS locate + follow mode
+    MapView.tsx          # MapLibre map + base style + controls
+    SearchBar.tsx        # debounced Nominatim place search
+    LocateControl.tsx    # GPS locate + follow mode
+    LayerSwitcher.tsx    # base layer + relief toggle
+    CoordinateReadout.tsx# lat/long + MGA grid + centre elevation
+    RouteTool.tsx        # route drawing, elevation profile, save/GPX
+    TrackRecorder.tsx    # live GPS track recording
+    PinTool.tsx          # drop/manage waypoints
+    OfflinePanel.tsx     # download tiles for offline use
+    ShareControl.tsx / UpdatePrompt.tsx / ElevationProfile.tsx
   lib/
-    mapStyle.ts        # tile source, Australia view/bounds, attribution
-    geocode.ts         # Nominatim geocoding client
-  App.tsx              # app shell
+    mapStyle.ts          # tile sources, Australia view/bounds, attribution
+    geocode.ts           # Nominatim geocoding client
+    elevation.ts         # Open-Meteo elevation (profiles + point), retries
+    geo.ts / grid.ts     # distance/sampling + MGA/UTM helpers
+    gpx.ts               # GPX import/export
+    savedRoutes.ts / savedPins.ts  # localStorage persistence
+    tiles.ts / urlState.ts / useOnlineStatus.ts
+  App.tsx                # app shell
 ```
 
 ## Offline maps
@@ -86,6 +110,6 @@ tile-server fair-use; zoom in or lower the detail for large areas.
 
 ## Roadmap
 
-- **Routes** — draw/save routes with distance and elevation profiles, GPX import/export
 - **Bigger offline regions** — switch to PMTiles archives for whole-state downloads
+- **Route following** — off-route alerts and turn-by-turn while navigating a saved route
 - **Native app** — reuse this logic with MapLibre React Native, or wrap the PWA

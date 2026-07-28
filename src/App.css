@@ -342,6 +342,16 @@
   opacity: 0.8;
 }
 
+.coord-elev {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #9be29b;
+}
+
 .coord-copied {
   font-size: 13px;
   font-weight: 600;
