@@ -1,6 +1,8 @@
 // On-device persistence for user-dropped pins (points of interest) using
 // localStorage. Pins are tiny, so this scales fine for personal use.
 
+import type { PinType } from './pinTypes'
+
 const STORAGE_KEY = 'austopo.pins.v1'
 
 export type Pin = {
@@ -8,8 +10,13 @@ export type Pin = {
   name: string
   lng: number
   lat: number
+  type: PinType
+  notes: string
   createdAt: number
 }
+
+// Fields the user can edit after a pin is dropped.
+export type PinEdit = Partial<Pick<Pin, 'name' | 'type' | 'notes'>>
 
 function makeId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
@@ -30,6 +37,12 @@ export function listPins(): Pin[] {
           Number.isFinite(p.lng) &&
           Number.isFinite(p.lat),
       )
+      // Backfill type/notes for pins saved before those fields existed.
+      .map((p) => ({
+        ...p,
+        type: (p.type ?? 'generic') as PinType,
+        notes: typeof p.notes === 'string' ? p.notes : '',
+      }))
       .sort((a, b) => b.createdAt - a.createdAt)
   } catch {
     return []
@@ -44,12 +57,19 @@ function persist(pins: Pin[]): void {
   }
 }
 
-export function addPin(name: string, lng: number, lat: number): Pin[] {
+export function addPin(
+  name: string,
+  lng: number,
+  lat: number,
+  type: PinType = 'generic',
+): Pin[] {
   const pin: Pin = {
     id: makeId(),
     name: name.trim() || 'Untitled pin',
     lng,
     lat,
+    type,
+    notes: '',
     createdAt: Date.now(),
   }
   const next = [pin, ...listPins()]
@@ -57,10 +77,15 @@ export function addPin(name: string, lng: number, lat: number): Pin[] {
   return next
 }
 
-export function renamePin(id: string, name: string): Pin[] {
-  const next = listPins().map((p) =>
-    p.id === id ? { ...p, name: name.trim() || p.name } : p,
-  )
+export function updatePin(id: string, edit: PinEdit): Pin[] {
+  const next = listPins().map((p) => {
+    if (p.id !== id) return p
+    return {
+      ...p,
+      ...edit,
+      name: edit.name !== undefined ? edit.name.trim() || p.name : p.name,
+    }
+  })
   persist(next)
   return next
 }

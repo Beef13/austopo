@@ -863,6 +863,106 @@ body.cursor-probe .center-crosshair {
   cursor: not-allowed;
 }
 
+.route-follow {
+  width: 100%;
+  margin-top: 8px;
+  background: #fff;
+  border: 1.5px solid #2e7d32;
+  color: #2e7d32;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 8px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.route-follow:hover:not(:disabled) {
+  background: #eef6ef;
+}
+
+.route-follow.is-active {
+  background: #c62828;
+  border-color: #c62828;
+  color: #fff;
+}
+
+.route-follow.is-active:hover:not(:disabled) {
+  background: #b71c1c;
+}
+
+.route-follow:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Live route-following banner (portaled to the top of the screen). */
+.follow-banner {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(92vw, 420px);
+  padding: 10px 12px 10px 16px;
+  background: #1b5e20;
+  color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+}
+
+.follow-banner.is-off {
+  background: #c62828;
+}
+
+.follow-banner.is-arrived {
+  background: #1565c0;
+}
+
+.follow-banner-main {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.follow-banner-line {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.follow-banner-sub {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.follow-banner-stop {
+  flex-shrink: 0;
+  border: none;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.follow-banner-stop:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+/* The dot that rides along the route at your current progress point. */
+.route-progress-marker {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #1b5e20;
+  border: 2.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
 .route-saved {
   margin-top: 12px;
   border-top: 1px solid #e7eeea;
@@ -1126,7 +1226,23 @@ body.cursor-probe .center-crosshair {
 .pin-meta {
   font-size: 11px;
   color: #8a9a90;
-  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.pin-item {
+  align-items: center;
+}
+
+.pin-type-icon {
+  flex-shrink: 0;
+  line-height: 0;
+  width: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .pin-icon {
@@ -1142,6 +1258,155 @@ body.cursor-probe .center-crosshair {
 .pin-icon:hover {
   background: #e0e9e3;
   color: #223028;
+}
+
+/* Inline pin editor (name + type + notes). */
+.pin-item.is-editing {
+  display: block;
+}
+
+.pin-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #f2f7f4;
+  border: 1px solid #d8e4dc;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.pin-editor-name,
+.pin-editor-notes {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cdd9d2;
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: inherit;
+  color: #223028;
+  background: #fff;
+}
+
+.pin-editor-name:focus,
+.pin-editor-notes:focus {
+  outline: none;
+  border-color: #2e7d32;
+}
+
+.pin-editor-notes {
+  resize: vertical;
+  min-height: 40px;
+}
+
+.pin-type-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+
+.pin-type-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 1.5px solid transparent;
+  background: #fff;
+  border-radius: 8px;
+  padding: 5px 2px 4px;
+  cursor: pointer;
+}
+
+.pin-type-chip-icon {
+  line-height: 0;
+}
+
+.pin-type-chip-label {
+  font-size: 9.5px;
+  color: #667a70;
+  font-weight: 600;
+}
+
+.pin-type-chip:hover {
+  background: #e8f0ea;
+}
+
+.pin-type-chip.is-active {
+  border-color: #2e7d32;
+  background: #e8f0ea;
+}
+
+.pin-type-chip.is-active .pin-type-chip-label {
+  color: #1b5e20;
+}
+
+.pin-editor-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.pin-editor-cancel,
+.pin-editor-save {
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.pin-editor-cancel {
+  background: #e0e9e3;
+  color: #445;
+}
+
+.pin-editor-cancel:hover {
+  background: #d2ded7;
+}
+
+.pin-editor-save {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.pin-editor-save:hover {
+  background: #276b2b;
+}
+
+/* Rich pin popup. */
+.pin-popup {
+  min-width: 120px;
+  max-width: 220px;
+}
+
+.pin-popup-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1b2b22;
+}
+
+.pin-popup-type {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2e7d32;
+  margin-top: 1px;
+}
+
+.pin-popup-notes {
+  font-size: 12px;
+  color: #33413a;
+  margin-top: 5px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pin-popup-coord {
+  font-size: 10.5px;
+  color: #8a9a90;
+  margin-top: 5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .map-pin {

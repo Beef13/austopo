@@ -68,6 +68,52 @@ export function sampleAlongPath(
   return { points: sampledPoints, distances }
 }
 
+// The closest position on a polyline to a point, using a local planar
+// approximation (accurate at the scale of a GPS-to-route offset). Returns the
+// distance along the line to that position, the position itself, and the
+// perpendicular offset — all in metres.
+export function nearestOnPath(
+  points: LngLat[],
+  p: LngLat,
+): { along: number; point: LngLat; offset: number } {
+  if (points.length === 0) return { along: 0, point: p, offset: 0 }
+  if (points.length === 1) {
+    return { along: 0, point: points[0], offset: haversine(points[0], p) }
+  }
+  const mPerDegLat = 111320
+  const mPerDegLng = 111320 * Math.cos((p[1] * Math.PI) / 180)
+  const toXY = (q: LngLat): [number, number] => [
+    (q[0] - p[0]) * mPerDegLng,
+    (q[1] - p[1]) * mPerDegLat,
+  ]
+
+  let best = { d2: Infinity, along: 0, point: points[0] }
+  let acc = 0
+  for (let i = 1; i < points.length; i++) {
+    const a = toXY(points[i - 1])
+    const b = toXY(points[i])
+    const abx = b[0] - a[0]
+    const aby = b[1] - a[1]
+    const len2 = abx * abx + aby * aby || 1
+    // Project the origin (the query point p) onto segment a->b.
+    let t = -((a[0] * abx + a[1] * aby) / len2)
+    t = Math.max(0, Math.min(1, t))
+    const projX = a[0] + t * abx
+    const projY = a[1] + t * aby
+    const d2 = projX * projX + projY * projY
+    const segLen = haversine(points[i - 1], points[i])
+    if (d2 < best.d2) {
+      best = {
+        d2,
+        along: acc + t * segLen,
+        point: lerp(points[i - 1], points[i], t),
+      }
+    }
+    acc += segLen
+  }
+  return { along: best.along, point: best.point, offset: Math.sqrt(best.d2) }
+}
+
 // The [lng, lat] a given distance (metres) along a polyline. Clamps to the
 // endpoints for out-of-range distances.
 export function pointAtDistance(points: LngLat[], target: number): LngLat {

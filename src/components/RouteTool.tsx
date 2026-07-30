@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import * as maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection } from 'geojson'
 import {
   formatDistance,
   formatElevation,
+  nearestOnPath,
   pathLength,
   pointAtDistance,
   type LngLat,
@@ -40,6 +42,26 @@ const SOURCE_ID = 'route'
 const LINE_LAYER = 'route-line'
 const POINT_LAYER = 'route-points'
 
+// How far off the line (m) counts as "off route", and how close to the end (m)
+// counts as arrived.
+const OFF_ROUTE_M = 40
+const ARRIVE_M = 25
+
+type FollowProgress = {
+  remaining: number
+  offset: number
+  eta: number | null
+  arrived: boolean
+}
+
+function locationMarkerEl(): HTMLElement {
+  const el = document.createElement('div')
+  el.className = 'user-location-marker'
+  el.innerHTML =
+    '<span class="user-location-pulse"></span><span class="user-location-dot"></span>'
+  return el
+}
+
 // The visible line follows `line` (the snapped path when routing is on, or the
 // straight anchors otherwise); the draggable circles mark the anchor waypoints.
 function routeFeatures(waypoints: LngLat[], line: LngLat[]): FeatureCollection {
@@ -75,9 +97,14 @@ export default function RouteTool({ map }: RouteToolProps) {
   const [elevReloadKey, setElevReloadKey] = useState(0)
   const [saved, setSaved] = useState<SavedRoute[]>([])
   const [scrubDist, setScrubDist] = useState<number | null>(null)
+  const [following, setFollowing] = useState(false)
+  const [progress, setProgress] = useState<FollowProgress | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const routeCache = useRef<SegmentCache>(new Map())
   const cursorMarker = useRef<maplibregl.Marker | null>(null)
+  const watchIdRef = useRef<number | null>(null)
+  const gpsMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const progressMarkerRef = useRef<maplibregl.Marker | null>(null)
   const openRef = useRef(open)
   openRef.current = open
   const waypointsRef = useRef(waypoints)
@@ -434,6 +461,24 @@ export default function RouteTool({ map }: RouteToolProps) {
     [],
   )
 
+  // Stop following if the route is cleared out from under it.
+  useEffect(() => {
+    if (following && displayLine.length < 2) stopFollow()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [following, displayLine])
+
+  // Clear the geolocation watch + markers on unmount.
+  useEffect(
+    () => () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current)
+      }
+      gpsMarkerRef.current?.remove()
+      progressMarkerRef.current?.remove()
+    },
+    [],
+  )
+
   // Refresh the saved-route list whenever the panel is opened.
   useEffect(() => {
     if (open) setSaved(listRoutes())
@@ -443,6 +488,83 @@ export default function RouteTool({ map }: RouteToolProps) {
   const estimatedTime = profile
     ? estimateTimeSeconds(distance, profile.ascent, activity)
     : null
+
+  // Live refs so the geolocation watch callback always sees the current route.
+  const displayLineRef = useRef(displayLine)
+  displayLineRef.current = displayLine
+  const totalRef = useRef(distance)
+  totalRef.current = distance
+  const ascentRef = useRef(profile?.ascent ?? 0)
+  ascentRef.current = profile?.ascent ?? 0
+  const activityObjRef = useRef(activity)
+  activityObjRef.current = activity
+
+  const stopFollow = () => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current)
+      watchIdRef.current = null
+    }
+    gpsMarkerRef.current?.remove()
+    gpsMarkerRef.current = null
+    progressMarkerRef.current?.remove()
+    progressMarkerRef.current = null
+    setFollowing(false)
+    setProgress(null)
+  }
+
+  const onFollowPos = (pos: GeolocationPosition) => {
+    const line = displayLineRef.current
+    if (line.length < 2) return
+    const p: LngLat = [pos.coords.longitude, pos.coords.latitude]
+
+    if (!gpsMarkerRef.current) {
+      gpsMarkerRef.current = new maplibregl.Marker({ element: locationMarkerEl() })
+        .setLngLat(p)
+        .addTo(map)
+    } else {
+      gpsMarkerRef.current.setLngLat(p)
+    }
+
+    const { along, point, offset } = nearestOnPath(line, p)
+    const total = totalRef.current
+    const remaining = Math.max(0, total - along)
+    const off = offset > OFF_ROUTE_M
+    const arrived = remaining <= ARRIVE_M && !off
+
+    if (!progressMarkerRef.current) {
+      const el = document.createElement('div')
+      el.className = 'route-progress-marker'
+      progressMarkerRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat(point)
+        .addTo(map)
+    } else {
+      progressMarkerRef.current.setLngLat(point)
+    }
+
+    const frac = total > 0 ? along / total : 0
+    const eta = estimateTimeSeconds(
+      remaining,
+      ascentRef.current * (1 - frac),
+      activityObjRef.current,
+    )
+    setProgress({ remaining, offset, eta, arrived })
+  }
+
+  const startFollow = () => {
+    if (!('geolocation' in navigator) || displayLine.length < 2) return
+    setFollowing(true)
+    setProgress(null)
+    watchIdRef.current = navigator.geolocation.watchPosition(onFollowPos, undefined, {
+      enableHighAccuracy: true,
+      maximumAge: 2000,
+      timeout: 15000,
+    })
+  }
+
+  const toggleFollow = () => {
+    if (following) stopFollow()
+    else startFollow()
+  }
 
   const fitToWaypoints = (points: LngLat[]) => {
     if (points.length < 2) return
@@ -707,6 +829,15 @@ export default function RouteTool({ map }: RouteToolProps) {
             Save route
           </button>
 
+          <button
+            type="button"
+            className={`route-follow${following ? ' is-active' : ''}`}
+            onClick={toggleFollow}
+            disabled={displayLine.length < 2}
+          >
+            {following ? 'Stop following' : 'Follow route'}
+          </button>
+
           {saved.length > 0 && (
             <div className="route-saved">
               <div className="route-saved-title">Saved routes</div>
@@ -757,6 +888,50 @@ export default function RouteTool({ map }: RouteToolProps) {
           />
         </div>
       )}
+
+      {following &&
+        createPortal(
+          <div
+            className={`follow-banner${progress && progress.offset > OFF_ROUTE_M ? ' is-off' : ''}${progress?.arrived ? ' is-arrived' : ''}`}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="follow-banner-main">
+              {!progress ? (
+                <span className="follow-banner-line">Waiting for GPS…</span>
+              ) : progress.arrived ? (
+                <span className="follow-banner-line">You’ve arrived</span>
+              ) : progress.offset > OFF_ROUTE_M ? (
+                <>
+                  <span className="follow-banner-line">
+                    Off route · {Math.round(progress.offset)} m away
+                  </span>
+                  <span className="follow-banner-sub">
+                    {formatDistance(progress.remaining)} to go
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="follow-banner-line">
+                    {formatDistance(progress.remaining)} to go
+                  </span>
+                  <span className="follow-banner-sub">
+                    {progress.eta !== null ? `~${formatDuration(progress.eta)} remaining` : ''}
+                  </span>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              className="follow-banner-stop"
+              onClick={stopFollow}
+              aria-label="Stop following route"
+            >
+              Stop
+            </button>
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

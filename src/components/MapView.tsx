@@ -67,6 +67,12 @@ export default function MapView({ onReady }: MapViewProps) {
         // 'load' event, but if the default layer's tiles can't be fetched (bad
         // API key, offline first-run, provider outage) 'load' may never fire —
         // so a fallback timeout guarantees the controls still appear.
+        // Dev-only handle so headless verification scripts can unproject
+        // pixels to coordinates. Guarded so it never ships to production.
+        if (import.meta.env.DEV) {
+          ;(window as unknown as { __map?: maplibregl.Map }).__map = map
+        }
+
         let signalled = false
         const readyMap = map
         const ready = () => {

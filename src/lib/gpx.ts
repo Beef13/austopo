@@ -97,7 +97,13 @@ export function downloadTrackGpx(
 }
 
 // A named point of interest for GPX waypoint export.
-export type GpxWaypoint = { lng: number; lat: number; name: string }
+export type GpxWaypoint = {
+  lng: number
+  lat: number
+  name: string
+  desc?: string
+  sym?: string
+}
 
 export function buildWaypointGpx(
   pins: GpxWaypoint[],
@@ -105,12 +111,18 @@ export function buildWaypointGpx(
 ): string {
   const now = new Date().toISOString()
   const wpts = pins
-    .map(
-      (p) =>
+    .map((p) => {
+      const lines = [`    <name>${escapeXml(p.name)}</name>`]
+      if (p.desc && p.desc.trim()) {
+        lines.push(`    <desc>${escapeXml(p.desc)}</desc>`)
+      }
+      if (p.sym) lines.push(`    <sym>${escapeXml(p.sym)}</sym>`)
+      return (
         `  <wpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}">\n` +
-        `    <name>${escapeXml(p.name)}</name>\n` +
-        `  </wpt>`,
-    )
+        `${lines.join('\n')}\n` +
+        `  </wpt>`
+      )
+    })
     .join('\n')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
