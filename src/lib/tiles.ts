@@ -1,4 +1,4 @@
-import { MAPTILER_KEY, type BaseLayerId } from './mapStyle'
+import { maptilerTileUrl, type BaseLayerId } from './mapStyle'
 
 export type TileCoord = { z: number; x: number; y: number }
 export type Bounds = { west: number; south: number; east: number; north: number }
@@ -60,7 +60,7 @@ export function countTilesForBounds(
 export function tileUrl(layer: BaseLayerId, { z, x, y }: TileCoord): string {
   switch (layer) {
     case 'maptiler':
-      return `https://api.maptiler.com/maps/outdoor-v2/256/${z}/${x}/${y}.png?key=${MAPTILER_KEY}`
+      return maptilerTileUrl(z, x, y)
     case 'satellite':
       return `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
     case 'gatopo':

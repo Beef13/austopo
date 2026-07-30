@@ -5,6 +5,7 @@ import {
   AUSTRALIA_CENTER,
   AUSTRALIA_INITIAL_ZOOM,
   AUSTRALIA_MAX_BOUNDS,
+  buildStyle,
   OPENTOPO_STYLE,
 } from '../lib/mapStyle'
 import { readViewFromUrl } from '../lib/urlState'
@@ -27,42 +28,60 @@ export default function MapView({ onReady }: MapViewProps) {
         ? [initial.lng, initial.lat]
         : AUSTRALIA_CENTER
 
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: OPENTOPO_STYLE,
-      center,
-      zoom: initial.zoom ?? AUSTRALIA_INITIAL_ZOOM,
-      maxBounds: AUSTRALIA_MAX_BOUNDS,
-      maxZoom: 18,
-      attributionControl: false,
-    })
+    let map: maplibregl.Map | null = null
+    let fallback = 0
+    let cancelled = false
 
-    map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false }),
-      'top-right',
-    )
-    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
-    map.addControl(
-      new maplibregl.AttributionControl({ compact: true }),
-      'bottom-right',
-    )
+    // The MapTiler vector style is fetched over the network, so the style is
+    // assembled asynchronously; fall back to the raster-only style if that
+    // fails so the map always loads.
+    void buildStyle()
+      .catch(() => OPENTOPO_STYLE)
+      .then((style) => {
+        if (cancelled || !containerRef.current) return
 
-    // Surface the UI as soon as the map is ready. Normally this is the 'load'
-    // event, but if the default layer's tiles can't be fetched (bad API key,
-    // offline first-run, provider outage) 'load' may never fire — so a fallback
-    // timeout guarantees the controls still appear instead of a stuck splash.
-    let signalled = false
-    const ready = () => {
-      if (signalled) return
-      signalled = true
-      onReadyRef.current(map)
-    }
-    map.on('load', ready)
-    const fallback = window.setTimeout(ready, 4000)
+        map = new maplibregl.Map({
+          container: containerRef.current,
+          style,
+          center,
+          zoom: initial.zoom ?? AUSTRALIA_INITIAL_ZOOM,
+          maxBounds: AUSTRALIA_MAX_BOUNDS,
+          maxZoom: 18,
+          attributionControl: false,
+        })
+
+        map.addControl(
+          new maplibregl.NavigationControl({ showCompass: false }),
+          'top-right',
+        )
+        map.addControl(
+          new maplibregl.ScaleControl({ unit: 'metric' }),
+          'bottom-left',
+        )
+        map.addControl(
+          new maplibregl.AttributionControl({ compact: true }),
+          'bottom-right',
+        )
+
+        // Surface the UI as soon as the map is ready. Normally this is the
+        // 'load' event, but if the default layer's tiles can't be fetched (bad
+        // API key, offline first-run, provider outage) 'load' may never fire —
+        // so a fallback timeout guarantees the controls still appear.
+        let signalled = false
+        const readyMap = map
+        const ready = () => {
+          if (signalled) return
+          signalled = true
+          onReadyRef.current(readyMap)
+        }
+        map.on('load', ready)
+        fallback = window.setTimeout(ready, 4000)
+      })
 
     return () => {
+      cancelled = true
       window.clearTimeout(fallback)
-      map.remove()
+      map?.remove()
     }
   }, [])
 
