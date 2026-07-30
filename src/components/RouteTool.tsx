@@ -1,9 +1,17 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection } from 'geojson'
 import { formatDistance, formatElevation, pathLength, type LngLat } from '../lib/geo'
 import { fetchElevationProfile, type ElevationProfileData } from '../lib/elevation'
 import { downloadGpx, parseGpx } from '../lib/gpx'
+import {
+  ACTIVITIES,
+  estimateTimeSeconds,
+  formatDuration,
+  getActivity,
+  type ActivityId,
+} from '../lib/activity'
+import { cachedSegment, snapRoute, type SegmentCache } from '../lib/routing'
 import {
   deleteRoute,
   listRoutes,
@@ -21,12 +29,14 @@ const SOURCE_ID = 'route'
 const LINE_LAYER = 'route-line'
 const POINT_LAYER = 'route-points'
 
-function routeFeatures(waypoints: LngLat[]): FeatureCollection {
+// The visible line follows `line` (the snapped path when routing is on, or the
+// straight anchors otherwise); the draggable circles mark the anchor waypoints.
+function routeFeatures(waypoints: LngLat[], line: LngLat[]): FeatureCollection {
   const features: Feature[] = []
-  if (waypoints.length >= 2) {
+  if (line.length >= 2) {
     features.push({
       type: 'Feature',
-      geometry: { type: 'LineString', coordinates: waypoints },
+      geometry: { type: 'LineString', coordinates: line },
       properties: {},
     })
   }
@@ -43,16 +53,47 @@ function routeFeatures(waypoints: LngLat[]): FeatureCollection {
 export default function RouteTool({ map }: RouteToolProps) {
   const [open, setOpen] = useState(false)
   const [waypoints, setWaypoints] = useState<LngLat[]>([])
+  const [snappedLine, setSnappedLine] = useState<LngLat[]>([])
+  const [snappedAnchors, setSnappedAnchors] = useState<LngLat[]>([])
+  const [snap, setSnap] = useState(true)
+  const [activityId, setActivityId] = useState<ActivityId>('hiking')
+  const [routing, setRouting] = useState(false)
   const [profile, setProfile] = useState<ElevationProfileData | null>(null)
   const [elevLoading, setElevLoading] = useState(false)
   const [elevError, setElevError] = useState(false)
   const [elevReloadKey, setElevReloadKey] = useState(0)
   const [saved, setSaved] = useState<SavedRoute[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const routeCache = useRef<SegmentCache>(new Map())
   const openRef = useRef(open)
   openRef.current = open
   const waypointsRef = useRef(waypoints)
   waypointsRef.current = waypoints
+
+  const activity = getActivity(activityId)
+  // Refs so the (map-only) interaction effect always sees the current snap /
+  // profile without needing to re-bind its listeners.
+  const snapRef = useRef(snap)
+  snapRef.current = snap
+  const profileRef = useRef(activity.profile)
+  profileRef.current = activity.profile
+
+  // The line to draw / measure / profile: the snapped path when it's ready,
+  // otherwise the straight anchors (instant feedback while routing).
+  const displayLine = useMemo<LngLat[]>(
+    () => (snap && snappedLine.length >= 2 ? snappedLine : waypoints),
+    [snap, snappedLine, waypoints],
+  )
+
+  // Where to draw the draggable dots: snapped onto the line when routing is
+  // active (so they never float off-trail), else at the raw tap positions.
+  const displayAnchors = useMemo<LngLat[]>(
+    () =>
+      snap && snappedAnchors.length === waypoints.length && waypoints.length > 0
+        ? snappedAnchors
+        : waypoints,
+    [snap, snappedAnchors, waypoints],
+  )
 
   // Create the route source + layers once.
   useEffect(() => {
@@ -60,7 +101,7 @@ export default function RouteTool({ map }: RouteToolProps) {
       if (map.getSource(SOURCE_ID)) return
       map.addSource(SOURCE_ID, {
         type: 'geojson',
-        data: routeFeatures([]),
+        data: routeFeatures([], []),
       })
       map.addLayer({
         id: LINE_LAYER,
@@ -101,11 +142,48 @@ export default function RouteTool({ map }: RouteToolProps) {
     }
   }, [map])
 
-  // Push waypoint changes to the map source.
+  // Push waypoint / line changes to the map source.
   useEffect(() => {
     const src = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined
-    src?.setData(routeFeatures(waypoints))
-  }, [map, waypoints])
+    src?.setData(routeFeatures(displayAnchors, displayLine))
+  }, [map, displayAnchors, displayLine])
+
+  // Snap anchors to paths (debounced) whenever they change, snap is on, or the
+  // activity's routing profile changes. Segments are cached so only the edited
+  // parts re-fetch; any failure falls back to a straight line.
+  useEffect(() => {
+    if (!snap || waypoints.length < 2) {
+      setSnappedLine([])
+      setSnappedAnchors([])
+      setRouting(false)
+      return
+    }
+    const controller = new AbortController()
+    setRouting(true)
+    const timer = setTimeout(async () => {
+      try {
+        const result = await snapRoute(
+          waypoints,
+          activity.profile,
+          routeCache.current,
+          controller.signal,
+        )
+        setSnappedLine(result.line)
+        setSnappedAnchors(result.anchors)
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          setSnappedLine([])
+          setSnappedAnchors([])
+        }
+      } finally {
+        setRouting(false)
+      }
+    }, 400)
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [waypoints, snap, activity.profile])
 
   // Map interactions while in route mode: tap empty ground to append a point,
   // tap the line to insert one, drag a point to move it, tap a point to delete.
@@ -115,8 +193,17 @@ export default function RouteTool({ map }: RouteToolProps) {
 
     let dragIndex = -1
     let moved = false
+    let panned = false
     let downXY: maplibregl.Point | null = null
     let live: LngLat[] | null = null
+
+    // MapLibre fires `dragstart` only when the user actually pans the map, which
+    // is a far more reliable "this was a pan, not a tap" signal than tracking
+    // pointer movement ourselves (mousemove/touchmove aren't emitted during an
+    // active drag-pan). We use it to avoid dropping a marker after panning.
+    const onDragStart = () => {
+      if (openRef.current && dragIndex < 0) panned = true
+    }
 
     const setCursor = (c: string) => {
       canvas.style.cursor = c
@@ -132,25 +219,40 @@ export default function RouteTool({ map }: RouteToolProps) {
       return -1
     }
 
-    // Index of the segment (start vertex) nearest to a screen point.
+    // Squared pixel distance from a screen point to a projected line segment.
+    const distToSeg = (
+      pt: maplibregl.Point,
+      a: maplibregl.Point,
+      b: maplibregl.Point,
+    ): number => {
+      const abx = b.x - a.x
+      const aby = b.y - a.y
+      const len2 = abx * abx + aby * aby || 1
+      let t = ((pt.x - a.x) * abx + (pt.y - a.y) * aby) / len2
+      t = Math.max(0, Math.min(1, t))
+      const dx = a.x + t * abx - pt.x
+      const dy = a.y + t * aby - pt.y
+      return dx * dx + dy * dy
+    }
+
+    // Which anchor interval a click belongs to, measured against the geometry
+    // that's actually drawn (the snapped sub-path when snapping, else the
+    // straight segment). Returns the start-anchor index; insert after it.
     const nearestSegment = (pt: maplibregl.Point): number => {
       const wp = waypointsRef.current
       let best = 0
       let bestDist = Infinity
       for (let i = 0; i < wp.length - 1; i++) {
-        const a = map.project(wp[i])
-        const b = map.project(wp[i + 1])
-        const abx = b.x - a.x
-        const aby = b.y - a.y
-        const len2 = abx * abx + aby * aby || 1
-        let t = ((pt.x - a.x) * abx + (pt.y - a.y) * aby) / len2
-        t = Math.max(0, Math.min(1, t))
-        const dx = a.x + t * abx - pt.x
-        const dy = a.y + t * aby - pt.y
-        const d = dx * dx + dy * dy
-        if (d < bestDist) {
-          bestDist = d
-          best = i
+        const geom =
+          (snapRef.current &&
+            cachedSegment(wp[i], wp[i + 1], profileRef.current, routeCache.current)) ||
+          [wp[i], wp[i + 1]]
+        for (let j = 0; j < geom.length - 1; j++) {
+          const d = distToSeg(pt, map.project(geom[j]), map.project(geom[j + 1]))
+          if (d < bestDist) {
+            bestDist = d
+            best = i
+          }
         }
       }
       return best
@@ -168,6 +270,7 @@ export default function RouteTool({ map }: RouteToolProps) {
       if ('touches' in e.originalEvent && e.originalEvent.touches.length > 1) return
       downXY = e.point
       moved = false
+      panned = false
       const idx = pointIndexAt(e.point)
       if (idx >= 0) {
         e.preventDefault()
@@ -185,10 +288,12 @@ export default function RouteTool({ map }: RouteToolProps) {
       if (dragIndex < 0 || !live) return
       e.preventDefault()
       live[dragIndex] = [e.lngLat.lng, e.lngLat.lat]
-      src()?.setData(routeFeatures(live))
+      src()?.setData(routeFeatures(live, live))
     }
 
     const onUp = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
+      const wasPanned = panned
+      panned = false
       // Finish an in-progress point drag.
       if (dragIndex >= 0) {
         const idx = dragIndex
@@ -206,9 +311,17 @@ export default function RouteTool({ map }: RouteToolProps) {
         downXY = null
         return
       }
-      // A tap that didn't move: either insert on the line or append.
-      if (!moved) {
-        const onLine = map.queryRenderedFeatures(e.point, { layers: [LINE_LAYER] })
+      // A genuine tap (no pan, no drag): either insert on the line or append.
+      if (!moved && !wasPanned) {
+        // Hit-test the line within a tolerance box (not a single pixel) so a
+        // tap slightly off the ~4px line still counts as "on the line".
+        const tol = 'touches' in e.originalEvent ? 18 : 12
+        const { x, y } = e.point
+        const box: [maplibregl.PointLike, maplibregl.PointLike] = [
+          [x - tol, y - tol],
+          [x + tol, y + tol],
+        ]
+        const onLine = map.queryRenderedFeatures(box, { layers: [LINE_LAYER] })
         if (onLine.length && waypointsRef.current.length >= 2) {
           const at = nearestSegment(e.point) + 1
           setWaypoints((prev) => {
@@ -225,6 +338,7 @@ export default function RouteTool({ map }: RouteToolProps) {
 
     map.on('mouseenter', POINT_LAYER, onEnterPoint)
     map.on('mouseleave', POINT_LAYER, onLeavePoint)
+    map.on('dragstart', onDragStart)
     map.on('mousedown', onDown)
     map.on('touchstart', onDown)
     map.on('mousemove', onMove)
@@ -235,6 +349,7 @@ export default function RouteTool({ map }: RouteToolProps) {
     return () => {
       map.off('mouseenter', POINT_LAYER, onEnterPoint)
       map.off('mouseleave', POINT_LAYER, onLeavePoint)
+      map.off('dragstart', onDragStart)
       map.off('mousedown', onDown)
       map.off('touchstart', onDown)
       map.off('mousemove', onMove)
@@ -252,9 +367,9 @@ export default function RouteTool({ map }: RouteToolProps) {
     }
   }, [map, open])
 
-  // Debounced elevation profile fetch.
+  // Debounced elevation profile fetch, following the drawn line.
   useEffect(() => {
-    if (waypoints.length < 2) {
+    if (displayLine.length < 2) {
       setProfile(null)
       setElevError(false)
       return
@@ -264,7 +379,7 @@ export default function RouteTool({ map }: RouteToolProps) {
     setElevError(false)
     const timer = setTimeout(async () => {
       try {
-        const data = await fetchElevationProfile(waypoints, controller.signal)
+        const data = await fetchElevationProfile(displayLine, controller.signal)
         setProfile(data)
       } catch (err) {
         if ((err as Error).name !== 'AbortError') setElevError(true)
@@ -276,14 +391,17 @@ export default function RouteTool({ map }: RouteToolProps) {
       controller.abort()
       clearTimeout(timer)
     }
-  }, [waypoints, elevReloadKey])
+  }, [displayLine, elevReloadKey])
 
   // Refresh the saved-route list whenever the panel is opened.
   useEffect(() => {
     if (open) setSaved(listRoutes())
   }, [open])
 
-  const distance = pathLength(waypoints)
+  const distance = pathLength(displayLine)
+  const estimatedTime = profile
+    ? estimateTimeSeconds(distance, profile.ascent, activity)
+    : null
 
   const fitToWaypoints = (points: LngLat[]) => {
     if (points.length < 2) return
@@ -330,6 +448,9 @@ export default function RouteTool({ map }: RouteToolProps) {
     try {
       const text = await file.text()
       const points = parseGpx(text)
+      // Imported tracks are already dense paths; show them as-is rather than
+      // re-snapping hundreds of points.
+      setSnap(false)
       setWaypoints(points)
       fitToWaypoints(points)
     } catch (err) {
@@ -366,10 +487,43 @@ export default function RouteTool({ map }: RouteToolProps) {
             <span className="route-panel-hint">Tap to add · drag to move · tap a point to remove</span>
           </div>
 
+          <div className="route-controls">
+            <label className="route-activity">
+              <span className="route-control-key">Activity</span>
+              <select
+                value={activityId}
+                onChange={(e) => setActivityId(e.target.value as ActivityId)}
+              >
+                {ACTIVITIES.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="route-snap" title="Follow tracks and trails between points">
+              <input
+                type="checkbox"
+                checked={snap}
+                onChange={(e) => setSnap(e.target.checked)}
+              />
+              <span>
+                Snap to paths
+                {snap && routing && <span className="route-snap-busy"> · routing…</span>}
+              </span>
+            </label>
+          </div>
+
           <div className="route-stats">
             <div className="route-stat">
               <span className="route-stat-val">{formatDistance(distance)}</span>
               <span className="route-stat-key">distance</span>
+            </div>
+            <div className="route-stat">
+              <span className="route-stat-val">
+                {estimatedTime !== null ? formatDuration(estimatedTime) : '\u2013'}
+              </span>
+              <span className="route-stat-key">est. time</span>
             </div>
             <div className="route-stat">
               <span className="route-stat-val">
@@ -417,8 +571,8 @@ export default function RouteTool({ map }: RouteToolProps) {
             </button>
             <button
               type="button"
-              onClick={() => downloadGpx(waypoints)}
-              disabled={waypoints.length < 2}
+              onClick={() => downloadGpx(displayLine)}
+              disabled={displayLine.length < 2}
             >
               Export
             </button>

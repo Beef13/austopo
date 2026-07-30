@@ -583,6 +583,10 @@
   right: 0;
   bottom: calc(100% + 10px);
   width: 292px;
+  max-height: min(72vh, 560px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: #fff;
   color: #223028;
   border-radius: 14px;
@@ -607,14 +611,66 @@
   color: #8a9a90;
 }
 
-.route-stats {
+.route-controls {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.route-activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.route-control-key {
+  font-size: 11px;
+  color: #667a70;
+}
+
+.route-activity select {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 6px;
+  border: 1px solid #cfe0d7;
+  border-radius: 8px;
+  background: #fff;
+  color: #1f2a24;
+}
+
+.route-snap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #1f2a24;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.route-snap input {
+  accent-color: #e5322d;
+}
+
+.route-snap-busy {
+  color: #8a9a90;
+  font-style: italic;
+}
+
+.route-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin: 12px 0;
 }
 
 .route-stat {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
