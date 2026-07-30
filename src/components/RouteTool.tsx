@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { Feature, FeatureCollection } from 'geojson'
-import { formatDistance, formatElevation, pathLength, type LngLat } from '../lib/geo'
+import {
+  formatDistance,
+  formatElevation,
+  pathLength,
+  pointAtDistance,
+  type LngLat,
+} from '../lib/geo'
 import { fetchElevationProfile, type ElevationProfileData } from '../lib/elevation'
 import { downloadGpx, parseGpx } from '../lib/gpx'
 import {
@@ -68,8 +74,10 @@ export default function RouteTool({ map }: RouteToolProps) {
   const [elevError, setElevError] = useState(false)
   const [elevReloadKey, setElevReloadKey] = useState(0)
   const [saved, setSaved] = useState<SavedRoute[]>([])
+  const [scrubDist, setScrubDist] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const routeCache = useRef<SegmentCache>(new Map())
+  const cursorMarker = useRef<maplibregl.Marker | null>(null)
   const openRef = useRef(open)
   openRef.current = open
   const waypointsRef = useRef(waypoints)
@@ -398,6 +406,34 @@ export default function RouteTool({ map }: RouteToolProps) {
     }
   }, [displayLine, elevReloadKey])
 
+  // Move a marker along the route to mirror the elevation-chart scrub position.
+  useEffect(() => {
+    if (!open || scrubDist === null || displayLine.length < 2) {
+      cursorMarker.current?.remove()
+      cursorMarker.current = null
+      return
+    }
+    const coord = pointAtDistance(displayLine, scrubDist)
+    if (!cursorMarker.current) {
+      const el = document.createElement('div')
+      el.className = 'elev-cursor-marker'
+      cursorMarker.current = new maplibregl.Marker({ element: el })
+        .setLngLat(coord)
+        .addTo(map)
+    } else {
+      cursorMarker.current.setLngLat(coord)
+    }
+  }, [open, scrubDist, displayLine, map])
+
+  // Remove the scrub marker on unmount.
+  useEffect(
+    () => () => {
+      cursorMarker.current?.remove()
+      cursorMarker.current = null
+    },
+    [],
+  )
+
   // Refresh the saved-route list whenever the panel is opened.
   useEffect(() => {
     if (open) setSaved(listRoutes())
@@ -600,7 +636,9 @@ export default function RouteTool({ map }: RouteToolProps) {
                 </button>
               </div>
             )}
-            {!elevLoading && !elevError && profile && <ElevationProfile data={profile} />}
+            {!elevLoading && !elevError && profile && (
+              <ElevationProfile data={profile} onScrub={setScrubDist} />
+            )}
             {!elevLoading && !elevError && !profile && waypoints.length < 2 && (
               <div className="route-elev-msg">Add at least 2 points for an elevation profile</div>
             )}

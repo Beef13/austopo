@@ -68,6 +68,23 @@ export function sampleAlongPath(
   return { points: sampledPoints, distances }
 }
 
+// The [lng, lat] a given distance (metres) along a polyline. Clamps to the
+// endpoints for out-of-range distances.
+export function pointAtDistance(points: LngLat[], target: number): LngLat {
+  if (points.length === 0) return [0, 0]
+  if (points.length === 1 || target <= 0) return points[0]
+  let acc = 0
+  for (let i = 1; i < points.length; i++) {
+    const seg = haversine(points[i - 1], points[i])
+    if (acc + seg >= target) {
+      const t = seg === 0 ? 0 : (target - acc) / seg
+      return lerp(points[i - 1], points[i], t)
+    }
+    acc += seg
+  }
+  return points[points.length - 1]
+}
+
 export function formatDistance(metres: number): string {
   if (metres < 1000) return `${Math.round(metres)} m`
   return `${(metres / 1000).toFixed(metres < 10000 ? 2 : 1)} km`
