@@ -1,16 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
-import type { BaseLayerId } from '../lib/mapStyle'
+import { hasMaptiler, type BaseLayerId } from '../lib/mapStyle'
 import {
   cachedTileCount,
   clearOfflineTiles,
   countTilesForBounds,
   downloadTiles,
+  downloadUrls,
   sourceMaxZoom,
   tilesForBounds,
   type Bounds,
   type DownloadProgress,
 } from '../lib/tiles'
+import {
+  countVectorAssets,
+  getVectorManifest,
+  vectorAssetUrls,
+  type VectorManifest,
+} from '../lib/offlineVector'
 
 type OfflinePanelProps = {
   map: maplibregl.Map
@@ -41,7 +48,16 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
   const [, setViewTick] = useState(0) // forces recompute as the map moves
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
   const [cachedCount, setCachedCount] = useState(0)
+  const [manifest, setManifest] = useState<VectorManifest | null>(null)
+  const [manifestState, setManifestState] = useState<'idle' | 'loading' | 'error'>(
+    'idle',
+  )
   const abortRef = useRef<AbortController | null>(null)
+
+  // The MapTiler "Topo" base is a vector style, which needs its vector tiles,
+  // glyphs and sprite cached (not raster PNGs) to work offline.
+  const isVectorLayer = layer === 'maptiler' && hasMaptiler
+  const useVector = isVectorLayer && manifest !== null
 
   const refreshCached = useCallback(() => {
     cachedTileCount().then(setCachedCount)
@@ -57,23 +73,49 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
     }
   }, [open, map, refreshCached])
 
+  // Load the vector manifest (style.json + source TileJSONs) when needed. If it
+  // fails (e.g. offline), we fall back to downloading raster MapTiler tiles.
+  useEffect(() => {
+    if (!open || !isVectorLayer || manifest || manifestState !== 'idle') return
+    setManifestState('loading')
+    getVectorManifest()
+      .then((m) => {
+        setManifest(m)
+        setManifestState('idle')
+      })
+      .catch(() => setManifestState('error'))
+  }, [open, isVectorLayer, manifest, manifestState])
+
   const minZoom = Math.floor(map.getZoom())
-  const maxZoom = Math.min(minZoom + extraLevels, sourceMaxZoom(layer))
+  const vectorMaxZoom = manifest
+    ? Math.max(...manifest.sources.map((s) => s.maxzoom))
+    : 15
+  const maxZoom = Math.min(
+    minZoom + extraLevels,
+    useVector ? vectorMaxZoom : sourceMaxZoom(layer),
+  )
   const bounds = mapBounds(map)
-  const estimate = countTilesForBounds(bounds, minZoom, maxZoom)
+  const estimate = useVector
+    ? countVectorAssets(manifest, bounds, minZoom, maxZoom)
+    : countTilesForBounds(bounds, minZoom, maxZoom)
   const tooLarge = estimate > MAX_TILES
+  const preparing = isVectorLayer && manifestState === 'loading' && !manifest
   const downloading = progress !== null
 
   const start = async () => {
-    if (tooLarge || downloading) return
-    const tiles = tilesForBounds(bounds, minZoom, maxZoom)
+    if (tooLarge || downloading || preparing) return
     const controller = new AbortController()
     abortRef.current = controller
-    setProgress({ done: 0, total: tiles.length, failed: 0 })
-    await downloadTiles(layer, tiles, {
-      signal: controller.signal,
-      onProgress: setProgress,
-    })
+    const opts = { signal: controller.signal, onProgress: setProgress }
+    if (useVector) {
+      const urls = vectorAssetUrls(manifest, bounds, minZoom, maxZoom)
+      setProgress({ done: 0, total: urls.length, failed: 0 })
+      await downloadUrls(urls, opts)
+    } else {
+      const tiles = tilesForBounds(bounds, minZoom, maxZoom)
+      setProgress({ done: 0, total: tiles.length, failed: 0 })
+      await downloadTiles(layer, tiles, opts)
+    }
     abortRef.current = null
     setProgress(null)
     refreshCached()
@@ -115,6 +157,16 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
             Saves the current {layer === 'satellite' ? 'satellite' : 'topo'} view for offline use.
           </p>
 
+          {preparing && (
+            <p className="offline-panel-hint">Preparing map data&hellip;</p>
+          )}
+          {isVectorLayer && manifestState === 'error' && (
+            <p className="offline-warning">
+              Couldn't prepare vector data (you may be offline). Basic tiles will
+              be saved instead.
+            </p>
+          )}
+
           <label className="offline-field">
             <span>Detail (extra zoom levels): {extraLevels}</span>
             <input
@@ -130,7 +182,8 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
           <div className="offline-stats">
             <span>Zoom {minZoom}&ndash;{maxZoom}</span>
             <span>
-              ~{estimate.toLocaleString()} tiles &middot; ~{formatSize(estimate)}
+              ~{estimate.toLocaleString()} {useVector ? 'items' : 'tiles'} &middot; ~
+              {formatSize(estimate)}
             </span>
           </div>
 
@@ -161,14 +214,14 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
               type="button"
               className="offline-action offline-download"
               onClick={start}
-              disabled={tooLarge}
+              disabled={tooLarge || preparing}
             >
-              Download
+              {preparing ? 'Preparing\u2026' : 'Download'}
             </button>
           )}
 
           <div className="offline-storage">
-            <span>{cachedCount.toLocaleString()} tiles stored</span>
+            <span>{cachedCount.toLocaleString()} items stored</span>
             {cachedCount > 0 && (
               <button type="button" className="offline-clear" onClick={clear} disabled={downloading}>
                 Clear

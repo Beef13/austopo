@@ -97,18 +97,31 @@ node scripts/verify-map.mjs  # in another; writes /tmp/austopo-verify.png
 ```
 
 It reports MapTiler request counts (`pbf`/`sprite`/`styleJson`/`png`), any 403s,
-page errors, active layer, and a screenshot. NOTE: `scripts/verify-map.mjs`
-imports `playwright`, which is currently not a saved dependency — install it
-(`npm i -D playwright && npx playwright install chromium`) if the script fails.
+page errors, active layer, and a screenshot.
+
+For the offline flow specifically, `scripts/verify-offline.mjs` builds against a
+**preview** server (SW only runs in the built app), downloads a region, goes
+offline, reloads, and confirms the vector Topo still renders from cache:
+
+```bash
+npm run build && npm run preview -- --port 4321   # one shell
+node scripts/verify-offline.mjs                    # another
+```
+
+NOTE: these scripts import `playwright`, which is currently not a saved
+dependency — install it (`npm i -D playwright && npx playwright install
+chromium`) if a script fails.
 
 ## Known caveats / things to watch
 
-- **Offline + vector**: the offline region downloader (`src/lib/tiles.ts`) still
-  enumerates **raster** MapTiler tiles. The on-screen Topo base is now vector, so
-  offline for the Topo layer isn't a perfect match (vector needs tiles + glyphs +
-  sprite cached). Runtime caching in `vite.config.ts` covers `api.maptiler.com`,
-  but a proper offline-vector story may need more work. The free layers
-  (OpenTopo/GA/Satellite) offline-download fine as raster.
+- **Offline + vector**: DONE. The region downloader now caches the vector base
+  properly — see `src/lib/offlineVector.ts` (`getVectorManifest`,
+  `vectorAssetUrls`), which enumerates the style.json, each source's TileJSON +
+  vector/terrain tiles, the glyph ranges for every fontstack, and the sprite
+  sheet. `OfflinePanel` uses this path when the MapTiler vector layer is active
+  and falls back to raster tiles if the manifest can't be built (e.g. offline).
+  Verified end-to-end by `scripts/verify-offline.mjs`. The free layers
+  (OpenTopo/GA/Satellite) still download as raster.
 - **MapTiler free tier is capped** (~100k tile loads/month). For public traffic
   this can be exceeded; the app degrades to free layers if MapTiler starts
   403ing. Consider making a free layer the default, or upgrading the plan, if
@@ -136,7 +149,9 @@ imports `playwright`, which is currently not a saved dependency — install it
   fallbacks, Australia bounds/center.
 - `src/components/MapView.tsx` — map init (async style), controls, ready/fallback.
 - `src/components/LayerSwitcher.tsx` — base/relief toggling (group-aware).
-- `src/lib/tiles.ts` — offline tile math + downloader.
+- `src/lib/tiles.ts` — offline raster tile math + `downloadUrls`/`downloadTiles`.
+- `src/lib/offlineVector.ts` — vector-base offline (manifest of style.json +
+  TileJSONs + vector/terrain tiles + glyphs + sprite).
 - `src/lib/elevation.ts` — Open-Meteo elevation (retry/backoff, gap-filling).
 - `src/lib/grid.ts` — lat/lon + MGA/UTM formatting.
 - `src/components/{RouteTool,PinTool,TrackRecorder,CoordinateReadout,ShareControl,OfflinePanel,UpdatePrompt}.tsx`

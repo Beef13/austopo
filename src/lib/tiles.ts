@@ -92,27 +92,29 @@ export type DownloadProgress = {
   failed: number
 }
 
-// Downloads all tiles for the given layer/bounds/zoom range. Fetches route
-// through the service worker, which caches them (CacheFirst) for offline use.
-export async function downloadTiles(
-  layer: BaseLayerId,
-  tiles: TileCoord[],
-  opts: {
-    concurrency?: number
-    signal?: AbortSignal
-    onProgress?: (p: DownloadProgress) => void
-  } = {},
+type DownloadOpts = {
+  concurrency?: number
+  signal?: AbortSignal
+  onProgress?: (p: DownloadProgress) => void
+}
+
+// Fetches a list of URLs through the service worker, which caches them
+// (CacheFirst) for offline use. Shared by the raster tile downloader and the
+// vector (MapTiler) downloader.
+export async function downloadUrls(
+  urls: string[],
+  opts: DownloadOpts = {},
 ): Promise<DownloadProgress> {
   const concurrency = opts.concurrency ?? 6
-  const progress: DownloadProgress = { done: 0, total: tiles.length, failed: 0 }
+  const progress: DownloadProgress = { done: 0, total: urls.length, failed: 0 }
   let index = 0
 
   const worker = async () => {
-    while (index < tiles.length) {
+    while (index < urls.length) {
       if (opts.signal?.aborted) return
-      const tile = tiles[index++]
+      const url = urls[index++]
       try {
-        const res = await fetch(tileUrl(layer, tile), { signal: opts.signal })
+        const res = await fetch(url, { signal: opts.signal })
         if (!res.ok) progress.failed++
       } catch {
         if (opts.signal?.aborted) return
@@ -124,9 +126,21 @@ export async function downloadTiles(
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, tiles.length) }, worker),
+    Array.from({ length: Math.min(concurrency, urls.length) }, worker),
   )
   return progress
+}
+
+// Downloads all tiles for the given raster layer/bounds/zoom range.
+export async function downloadTiles(
+  layer: BaseLayerId,
+  tiles: TileCoord[],
+  opts: DownloadOpts = {},
+): Promise<DownloadProgress> {
+  return downloadUrls(
+    tiles.map((t) => tileUrl(layer, t)),
+    opts,
+  )
 }
 
 // Number of tiles currently stored offline.
