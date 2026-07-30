@@ -11,7 +11,12 @@ import {
   getActivity,
   type ActivityId,
 } from '../lib/activity'
-import { cachedSegment, snapRoute, type SegmentCache } from '../lib/routing'
+import {
+  cachedSegment,
+  primeReversedSegments,
+  snapRoute,
+  type SegmentCache,
+} from '../lib/routing'
 import {
   deleteRoute,
   listRoutes,
@@ -415,6 +420,48 @@ export default function RouteTool({ map }: RouteToolProps) {
   const undo = () => setWaypoints((prev) => prev.slice(0, -1))
   const clear = () => setWaypoints([])
 
+  const samePoint = (a: LngLat, b: LngLat) => a[0] === b[0] && a[1] === b[1]
+
+  // Whether the current route is already a closed loop / a there-and-back, so
+  // the buttons can act as toggles and show an active state.
+  const isClosed =
+    waypoints.length >= 3 &&
+    samePoint(waypoints[0], waypoints[waypoints.length - 1])
+  const isOutAndBack = (() => {
+    const n = waypoints.length
+    if (n < 3 || n % 2 === 0) return false
+    for (let i = 0; i < n >> 1; i++) {
+      if (!samePoint(waypoints[i], waypoints[n - 1 - i])) return false
+    }
+    return true
+  })()
+
+  // Walk the route in the opposite direction. Reuse the existing snapped
+  // geometry (reversed) so the drawn line keeps its shape.
+  const reverse = () =>
+    setWaypoints((prev) => {
+      primeReversedSegments(prev, profileRef.current, routeCache.current)
+      return prev.slice().reverse()
+    })
+
+  // Toggle there-and-back: A-B-C <-> A-B-C-B-A. The return leg reuses the
+  // outbound line reversed, so applying it doesn't reshape the path.
+  const outAndBack = () =>
+    setWaypoints((prev) => {
+      if (prev.length < 2) return prev
+      if (isOutAndBack) return prev.slice(0, Math.ceil(prev.length / 2))
+      primeReversedSegments(prev, profileRef.current, routeCache.current)
+      return [...prev, ...prev.slice(0, -1).reverse()]
+    })
+
+  // Toggle a closed loop: append the start, or drop it again.
+  const closeLoop = () =>
+    setWaypoints((prev) => {
+      if (isClosed) return prev.slice(0, -1)
+      if (prev.length < 3) return prev
+      return [...prev, prev[0]]
+    })
+
   const onSave = () => {
     if (waypoints.length < 2) return
     const suggested = `Route ${formatDistance(distance)}`
@@ -557,6 +604,41 @@ export default function RouteTool({ map }: RouteToolProps) {
             {!elevLoading && !elevError && !profile && waypoints.length < 2 && (
               <div className="route-elev-msg">Add at least 2 points for an elevation profile</div>
             )}
+          </div>
+
+          <div className="route-actions route-shape">
+            <button
+              type="button"
+              onClick={reverse}
+              disabled={waypoints.length < 2}
+              title="Reverse the route direction"
+            >
+              Reverse
+            </button>
+            <button
+              type="button"
+              className={isOutAndBack ? 'is-active' : ''}
+              aria-pressed={isOutAndBack}
+              onClick={outAndBack}
+              disabled={waypoints.length < 2}
+              title={
+                isOutAndBack
+                  ? 'Remove the return leg (back to one-way)'
+                  : 'Retrace the route back to the start (there and back)'
+              }
+            >
+              Out &amp; back
+            </button>
+            <button
+              type="button"
+              className={isClosed ? 'is-active' : ''}
+              aria-pressed={isClosed}
+              onClick={closeLoop}
+              disabled={!isClosed && waypoints.length < 3}
+              title={isClosed ? 'Open the loop again' : 'Return to the start to form a loop'}
+            >
+              Close loop
+            </button>
           </div>
 
           <div className="route-actions">

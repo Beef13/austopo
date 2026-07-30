@@ -52,6 +52,23 @@ export function cachedSegment(
   return cache.get(segKey(a, b, profile))
 }
 
+// Seed the cache with the reversed geometry of each already-routed segment so a
+// reversed route or a there-and-back return leg reuses the exact same line
+// (just walked backwards) instead of re-routing in the opposite direction,
+// which BRouter can return with a slightly different shape.
+export function primeReversedSegments(
+  waypoints: LngLat[],
+  profile: string,
+  cache: SegmentCache,
+): void {
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const fwd = cache.get(segKey(waypoints[i], waypoints[i + 1], profile))
+    if (fwd) {
+      cache.set(segKey(waypoints[i + 1], waypoints[i], profile), fwd.slice().reverse())
+    }
+  }
+}
+
 export type SnapResult = {
   // The full drawn polyline (all segments concatenated).
   line: LngLat[]

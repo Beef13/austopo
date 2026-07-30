@@ -583,7 +583,10 @@
   right: 0;
   bottom: calc(100% + 10px);
   width: 292px;
-  max-height: min(72vh, 560px);
+  /* The panel opens upward from a button partway up the control stack, so cap
+     its height to the space above that button (the stack + its bottom offset is
+     ~384px) so the top never clips off-screen; it scrolls internally instead. */
+  max-height: clamp(200px, calc(100dvh - 384px), 560px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -754,6 +757,20 @@
   display: grid;
   grid-template-columns: 1fr 1fr 1fr 1fr;
   gap: 6px;
+}
+
+.route-shape {
+  grid-template-columns: 1fr 1fr 1fr;
+  margin-bottom: 8px;
+}
+
+.route-shape button.is-active {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.route-shape button.is-active:hover:not(:disabled) {
+  background: #276b2b;
 }
 
 .route-actions button {
