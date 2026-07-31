@@ -9,6 +9,7 @@ import ShareControl from './components/ShareControl'
 import OfflinePanel from './components/OfflinePanel'
 import RouteTool from './components/RouteTool'
 import PinTool from './components/PinTool'
+import MeasureTool from './components/MeasureTool'
 import TrackRecorder from './components/TrackRecorder'
 import UpdatePrompt from './components/UpdatePrompt'
 import { DEFAULT_BASE_LAYER, type BaseLayerId } from './lib/mapStyle'
@@ -16,11 +17,18 @@ import { buildViewQuery, readViewFromUrl } from './lib/urlState'
 import { useOnlineStatus } from './lib/useOnlineStatus'
 import './App.css'
 
+type PanelId = 'route' | 'pins' | 'measure' | 'offline'
+
 export default function App() {
   const [map, setMap] = useState<maplibregl.Map | null>(null)
   const [layer, setLayer] = useState<BaseLayerId>(
     () => readViewFromUrl().layer ?? DEFAULT_BASE_LAYER,
   )
+  // Only one tool panel is open at a time; each tool keeps its own state while
+  // minimised. `null` means everything is collapsed to its button.
+  const [activePanel, setActivePanel] = useState<PanelId | null>(null)
+  const togglePanel = (id: PanelId) =>
+    setActivePanel((cur) => (cur === id ? null : id))
   const online = useOnlineStatus()
   const layerRef = useRef(layer)
   layerRef.current = layer
@@ -75,10 +83,28 @@ export default function App() {
       {map && (
         <>
           <div className="floating-controls">
-            <RouteTool map={map} />
-            <PinTool map={map} />
+            <RouteTool
+              map={map}
+              open={activePanel === 'route'}
+              onToggle={() => togglePanel('route')}
+            />
+            <PinTool
+              map={map}
+              open={activePanel === 'pins'}
+              onToggle={() => togglePanel('pins')}
+            />
+            <MeasureTool
+              map={map}
+              open={activePanel === 'measure'}
+              onToggle={() => togglePanel('measure')}
+            />
             <TrackRecorder map={map} />
-            <OfflinePanel map={map} layer={layer} />
+            <OfflinePanel
+              map={map}
+              layer={layer}
+              open={activePanel === 'offline'}
+              onToggle={() => togglePanel('offline')}
+            />
             <LayerSwitcher map={map} active={layer} onChange={setLayer} />
             <LocateControl map={map} />
           </div>

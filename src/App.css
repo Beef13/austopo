@@ -183,6 +183,18 @@
   pointer-events: auto;
 }
 
+/* Keep the round tool buttons above any open panel so you can always switch tools
+   — a lower tool's panel opens upward across the buttons above it. */
+.route-btn,
+.pin-btn,
+.measure-btn,
+.offline-btn,
+.track-btn,
+.locate-btn {
+  position: relative;
+  z-index: 2;
+}
+
 .locate-btn {
   width: 48px;
   height: 48px;
@@ -1691,6 +1703,232 @@ body.cursor-probe .center-crosshair {
   font-size: 13px;
   padding: 6px 8px;
   cursor: pointer;
+}
+
+/* Measure tool */
+.measure-tool {
+  position: relative;
+}
+
+.measure-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: #0d9488;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.measure-btn:hover {
+  background: #eef7f5;
+}
+
+.measure-btn.is-open {
+  background: #0d9488;
+  color: #fff;
+}
+
+.measure-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 260px;
+  background: #fff;
+  color: #223028;
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+}
+
+.measure-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.measure-panel-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.measure-panel-hint {
+  font-size: 11px;
+  color: #8a9a90;
+}
+
+.measure-modes,
+.measure-submodes {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.measure-submodes {
+  margin-top: -4px;
+}
+
+.measure-modes button,
+.measure-submodes button {
+  border: none;
+  background: #eef2f0;
+  color: #223028;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.measure-submodes button {
+  font-size: 12px;
+  padding: 6px 4px;
+}
+
+.measure-modes button.is-active,
+.measure-submodes button.is-active {
+  background: #0d9488;
+  color: #fff;
+}
+
+.measure-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.measure-stats:has(.measure-stat:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.measure-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #f2f7f4;
+  border-radius: 10px;
+  padding: 8px 4px;
+}
+
+.measure-stat-val {
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.measure-stat-key {
+  font-size: 11px;
+  color: #667a70;
+  margin-top: 2px;
+}
+
+.measure-empty {
+  font-size: 12px;
+  color: #8a9a90;
+  line-height: 1.4;
+  padding: 2px 2px 12px;
+}
+
+.measure-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.measure-actions button {
+  border: none;
+  background: #eef2f0;
+  color: #223028;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 4px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.measure-actions button:hover:not(:disabled) {
+  background: #e0e9e3;
+}
+
+.measure-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Floating running-total label near the measured geometry. */
+.measure-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -12px);
+  background: #0d9488;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+/* Tool panels: one is open at a time; the rest minimise toward their button with
+   a quick scale + fade. They stay mounted (hidden) so their state is preserved. */
+.route-panel,
+.pin-panel,
+.measure-panel,
+.offline-panel {
+  transform-origin: bottom right;
+  transition:
+    opacity 0.18s ease,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.3, 1),
+    visibility 0.2s;
+}
+
+/* Sit the panels just left of the round button column so an open panel never
+   covers the other tool buttons — you can always switch tools. Capped so the
+   left edge stays on-screen on narrow phones. */
+.route-panel,
+.pin-panel,
+.measure-panel,
+.offline-panel,
+.track-panel {
+  right: 56px;
+  max-width: calc(100vw - 76px);
+}
+
+.route-panel.is-closed,
+.pin-panel.is-closed,
+.measure-panel.is-closed,
+.offline-panel.is-closed {
+  opacity: 0;
+  transform: scale(0.9) translateY(8px);
+  visibility: hidden;
+  pointer-events: none;
+  /* Hold visibility until the fade/scale finishes so it animates out, not blinks. */
+  transition:
+    opacity 0.16s ease,
+    transform 0.18s ease,
+    visibility 0s linear 0.18s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-panel,
+  .pin-panel,
+  .measure-panel,
+  .offline-panel {
+    transition: none;
+  }
 }
 
 /* Keep the MapLibre attribution readable above our controls. */

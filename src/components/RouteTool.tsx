@@ -37,6 +37,8 @@ import ElevationProfile from './ElevationProfile'
 
 type RouteToolProps = {
   map: maplibregl.Map
+  open: boolean
+  onToggle: () => void
 }
 
 const SOURCE_ID = 'route'
@@ -144,8 +146,7 @@ function routeFeatures(waypoints: LngLat[], line: LngLat[]): FeatureCollection {
   return { type: 'FeatureCollection', features }
 }
 
-export default function RouteTool({ map }: RouteToolProps) {
-  const [open, setOpen] = useState(false)
+export default function RouteTool({ map, open, onToggle }: RouteToolProps) {
   const [waypoints, setWaypoints] = useState<LngLat[]>([])
   const [snappedLine, setSnappedLine] = useState<LngLat[]>([])
   // The waypoints the current snappedLine was built from, so we only project a
@@ -915,7 +916,7 @@ export default function RouteTool({ map }: RouteToolProps) {
       <button
         type="button"
         className={`route-btn${open ? ' is-open' : ''}`}
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         title="Plan a route"
         aria-label="Plan a route"
         aria-expanded={open}
@@ -932,8 +933,12 @@ export default function RouteTool({ map }: RouteToolProps) {
         </svg>
       </button>
 
-      {open && (
-        <div className="route-panel" role="dialog" aria-label="Route planner">
+      <div
+        className={`route-panel${open ? ' is-open' : ' is-closed'}`}
+        role="dialog"
+        aria-label="Route planner"
+        aria-hidden={!open}
+      >
           <div className="route-panel-head">
             <span className="route-panel-title">Route</span>
             <span className="route-panel-hint">Tap to add · drag to move · tap a point to remove</span>
@@ -1141,8 +1146,7 @@ export default function RouteTool({ map }: RouteToolProps) {
             onChange={onFile}
             hidden
           />
-        </div>
-      )}
+      </div>
 
       {following &&
         createPortal(

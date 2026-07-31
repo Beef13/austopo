@@ -11,7 +11,19 @@ type ElevationProfileProps = {
   onScrub?: (distance: number | null) => void
 }
 
-const PAD = { top: 8, right: 8, bottom: 18, left: 34 }
+// Right margin holds the max/min elevation labels; the bottom holds distance
+// ticks. Left margin is small since there's no left-hand axis.
+const PAD = { top: 10, right: 40, bottom: 18, left: 6 }
+// Approx width of one axis label character at the 9px label font.
+const CHAR_PX = 5.6
+
+// A distance tick label: whole km for very long routes, one decimal for km-scale
+// routes, else metres. Keeping long-route labels short avoids them colliding.
+function fmtTick(metres: number, total: number): string {
+  if (total >= 100000) return `${Math.round(metres / 1000)} km`
+  if (total >= 1000) return `${(metres / 1000).toFixed(1)} km`
+  return `${Math.round(metres)} m`
+}
 
 export default function ElevationProfile({
   data,
@@ -113,18 +125,43 @@ export default function ElevationProfile({
       <path d={geom.areaPath} className="elev-area" />
       <path d={geom.linePath} className="elev-line" />
 
-      <text x={2} y={PAD.top + 6} className="elev-label">
-        {Math.round(data.max)}m
+      {/* Max / min elevation on the right. */}
+      <text x={width - 3} y={PAD.top + 4} className="elev-label" textAnchor="end">
+        {Math.round(data.max)} m
       </text>
-      <text x={2} y={height - PAD.bottom} className="elev-label">
-        {Math.round(data.min)}m
+      <text
+        x={width - 3}
+        y={height - PAD.bottom}
+        className="elev-label"
+        textAnchor="end"
+      >
+        {Math.round(data.min)} m
       </text>
-      <text x={PAD.left} y={height - 4} className="elev-label">
-        0
-      </text>
-      <text x={width - PAD.right} y={height - 4} className="elev-label" textAnchor="end">
-        {formatDistance(geom.totalDist)}
-      </text>
+
+      {/* Evenly spaced distance ticks along the bottom. The count adapts to the
+          available width and the widest label so they never overlap. */}
+      {(() => {
+        const plotW = width - PAD.left - PAD.right
+        const labelPx = fmtTick(geom.totalDist, geom.totalDist).length * CHAR_PX
+        const intervals = Math.max(1, Math.min(5, Math.floor(plotW / (labelPx + 22))))
+        const count = intervals + 1
+        return Array.from({ length: count }, (_, i) => {
+          const frac = i / intervals
+          const d = frac * geom.totalDist
+          const anchor = i === 0 ? 'start' : i === count - 1 ? 'end' : 'middle'
+          return (
+            <text
+              key={i}
+              x={geom.x(d)}
+              y={height - 4}
+              className="elev-label"
+              textAnchor={anchor}
+            >
+              {fmtTick(d, geom.totalDist)}
+            </text>
+          )
+        })
+      })()}
 
       {hover && (
         <g className="elev-cursor" pointerEvents="none">

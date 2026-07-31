@@ -18,6 +18,8 @@ import {
 
 type PinToolProps = {
   map: maplibregl.Map
+  open: boolean
+  onToggle: () => void
 }
 
 function createPinElement(type: PinType): HTMLElement {
@@ -49,8 +51,7 @@ function popupHtml(pin: Pin): string {
   </div>`
 }
 
-export default function PinTool({ map }: PinToolProps) {
-  const [open, setOpen] = useState(false)
+export default function PinTool({ map, open, onToggle }: PinToolProps) {
   const [dropMode, setDropMode] = useState(false)
   const [pins, setPins] = useState<Pin[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -168,23 +169,20 @@ export default function PinTool({ map }: PinToolProps) {
     )
   }
 
-  const toggleOpen = () => {
-    setOpen((o) => {
-      const next = !o
-      if (!next) {
-        setDropMode(false)
-        setEditingId(null)
-      }
-      return next
-    })
-  }
+  // When minimised, drop the transient arming / editing states but keep the pins.
+  useEffect(() => {
+    if (!open) {
+      setDropMode(false)
+      setEditingId(null)
+    }
+  }, [open])
 
   return (
     <div className="pin-tool">
       <button
         type="button"
         className={`pin-btn${open ? ' is-open' : ''}`}
-        onClick={toggleOpen}
+        onClick={onToggle}
         title="Pins"
         aria-label="Pins"
         aria-expanded={open}
@@ -202,8 +200,12 @@ export default function PinTool({ map }: PinToolProps) {
         </svg>
       </button>
 
-      {open && (
-        <div className="pin-panel" role="dialog" aria-label="Pins">
+      <div
+        className={`pin-panel${open ? ' is-open' : ' is-closed'}`}
+        role="dialog"
+        aria-label="Pins"
+        aria-hidden={!open}
+      >
           <div className="pin-panel-head">
             <span className="pin-panel-title">Pins</span>
             <span className="pin-panel-hint">
@@ -284,8 +286,7 @@ export default function PinTool({ map }: PinToolProps) {
               )}
             </ul>
           )}
-        </div>
-      )}
+      </div>
     </div>
   )
 }

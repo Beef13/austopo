@@ -151,9 +151,67 @@ export function pointAtDistance(points: LngLat[], target: number): LngLat {
   return points[points.length - 1]
 }
 
+// Area of a polygon (a ring of [lng, lat] points, implicitly closed) in square
+// metres, using the spherical excess formula. Sign is dropped so winding order
+// doesn't matter.
+export function polygonArea(ring: LngLat[]): number {
+  if (ring.length < 3) return 0
+  let sum = 0
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]
+    const b = ring[(i + 1) % ring.length]
+    sum += toRad(b[0] - a[0]) * (2 + Math.sin(toRad(a[1])) + Math.sin(toRad(b[1])))
+  }
+  return Math.abs((sum * EARTH_RADIUS_M * EARTH_RADIUS_M) / 2)
+}
+
+// The [lng, lat] reached by travelling `distM` metres from `start` on the given
+// bearing (radians, clockwise from north), on a sphere.
+export function destination(start: LngLat, bearingRad: number, distM: number): LngLat {
+  const lat1 = toRad(start[1])
+  const lng1 = toRad(start[0])
+  const dr = distM / EARTH_RADIUS_M
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(dr) + Math.cos(lat1) * Math.sin(dr) * Math.cos(bearingRad),
+  )
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(bearingRad) * Math.sin(dr) * Math.cos(lat1),
+      Math.cos(dr) - Math.sin(lat1) * Math.sin(lat2),
+    )
+  return [(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI]
+}
+
+// Initial bearing (radians, clockwise from north) from `a` to `b`.
+export function bearing(a: LngLat, b: LngLat): number {
+  const lat1 = toRad(a[1])
+  const lat2 = toRad(b[1])
+  const dLng = toRad(b[0] - a[0])
+  const y = Math.sin(dLng) * Math.cos(lat2)
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng)
+  return Math.atan2(y, x)
+}
+
+// A closed ring approximating a geodesic circle of `radiusM` around `center`.
+export function circleRing(center: LngLat, radiusM: number, steps = 64): LngLat[] {
+  const ring: LngLat[] = []
+  for (let i = 0; i <= steps; i++) {
+    ring.push(destination(center, (2 * Math.PI * i) / steps, radiusM))
+  }
+  return ring
+}
+
 export function formatDistance(metres: number): string {
   if (metres < 1000) return `${Math.round(metres)} m`
   return `${(metres / 1000).toFixed(metres < 10000 ? 2 : 1)} km`
+}
+
+// Human-friendly area: m² up to a hectare, hectares up to a km², then km².
+export function formatArea(m2: number): string {
+  if (m2 < 10000) return `${Math.round(m2)} m\u00b2`
+  if (m2 < 1_000_000) return `${(m2 / 10000).toFixed(2)} ha`
+  return `${(m2 / 1_000_000).toFixed(2)} km\u00b2`
 }
 
 export function formatElevation(metres: number): string {

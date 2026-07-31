@@ -22,6 +22,8 @@ import {
 type OfflinePanelProps = {
   map: maplibregl.Map
   layer: BaseLayerId
+  open: boolean
+  onToggle: () => void
 }
 
 const MAX_TILES = 4000
@@ -42,8 +44,7 @@ function formatSize(tiles: number): string {
   return mb < 1 ? `${Math.round(mb * 1024)} KB` : `${mb.toFixed(1)} MB`
 }
 
-export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
-  const [open, setOpen] = useState(false)
+export default function OfflinePanel({ map, layer, open, onToggle }: OfflinePanelProps) {
   const [extraLevels, setExtraLevels] = useState(2)
   const [, setViewTick] = useState(0) // forces recompute as the map moves
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
@@ -137,7 +138,7 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
       <button
         type="button"
         className={`offline-btn${open ? ' is-open' : ''}`}
-        onClick={() => setOpen((o) => !o)}
+        onClick={onToggle}
         title="Offline maps"
         aria-label="Offline maps"
         aria-expanded={open}
@@ -150,8 +151,12 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
         </svg>
       </button>
 
-      {open && (
-        <div className="offline-panel" role="dialog" aria-label="Download maps for offline use">
+      <div
+        className={`offline-panel${open ? ' is-open' : ' is-closed'}`}
+        role="dialog"
+        aria-label="Download maps for offline use"
+        aria-hidden={!open}
+      >
           <div className="offline-panel-title">Download this area</div>
           <p className="offline-panel-hint">
             Saves the current {layer === 'satellite' ? 'satellite' : 'topo'} view for offline use.
@@ -228,8 +233,7 @@ export default function OfflinePanel({ map, layer }: OfflinePanelProps) {
               </button>
             )}
           </div>
-        </div>
-      )}
+      </div>
     </div>
   )
 }
