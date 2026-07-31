@@ -6,6 +6,8 @@
 //
 // Terrarium encoding: elevation(m) = (R * 256 + G + B / 256) - 32768.
 
+import type { LngLat } from './geo'
+
 const TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'
 const TILE_SIZE = 256
 const MAX_ZOOM = 15
@@ -85,4 +87,33 @@ export function ensureTile(lng: number, lat: number, z: number): Promise<void> {
   })()
   loading.set(k, p)
   return p
+}
+
+// Elevation (m) for a set of points, sampled from the DEM tiles. Picks the
+// highest zoom that keeps the number of tiles bounded (so a long route doesn't
+// fetch hundreds), loads every covering tile once, then reads each point. Values
+// for tiles that failed to load come back null (the caller fills the gaps). This
+// is the reliable, rate-limit-free, offline-capable source behind the elevation
+// profile — the same tiles used for the live centre readout, so they always
+// agree.
+export async function sampleElevations(
+  points: LngLat[],
+  signal?: AbortSignal,
+): Promise<(number | null)[]> {
+  if (points.length === 0) return []
+  const MAX_TILES = 28
+  let z = MAX_ZOOM - 1
+  while (z > 6) {
+    const tiles = new Set<string>()
+    for (const [lng, lat] of points) {
+      const { tileX, tileY } = tilePixel(lng, lat, z)
+      tiles.add(key(z, tileX, tileY))
+      if (tiles.size > MAX_TILES) break
+    }
+    if (tiles.size <= MAX_TILES) break
+    z--
+  }
+  await Promise.all(points.map(([lng, lat]) => ensureTile(lng, lat, z)))
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
+  return points.map(([lng, lat]) => elevationSync(lng, lat, z))
 }

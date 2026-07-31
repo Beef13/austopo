@@ -372,8 +372,19 @@ body.cursor-probe .center-crosshair {
 }
 
 /* ---------- User location marker ---------- */
+/* MapLibre positions markers with a transform but (for custom elements) does
+   not force absolute positioning, so multiple markers would otherwise stack in
+   normal flow and drift. Pin these to the container's top-left. */
+.user-location-marker,
+.map-pin,
+.route-wp-badge,
+.route-progress-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
 .user-location-marker {
-  position: relative;
   width: 18px;
   height: 18px;
 }
@@ -715,6 +726,17 @@ body.cursor-probe .center-crosshair {
   margin-bottom: 12px;
 }
 
+.route-elev-chart {
+  width: 100%;
+}
+
+/* While the next profile computes, keep the current chart visible but slightly
+   dimmed so it updates in place rather than disappearing and popping back. */
+.route-elev-updating {
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
 .route-elev-msg {
   font-size: 12px;
   color: #8a9a90;
@@ -951,6 +973,34 @@ body.cursor-probe .center-crosshair {
 
 .follow-banner-stop:hover {
   background: rgba(255, 255, 255, 0.32);
+}
+
+/* Numbered waypoint badges drawn over the route. pointer-events:none so the
+   invisible circle hit-target underneath still handles drag / tap / delete. */
+.route-wp-badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: #e5322d;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
+.route-wp-start {
+  background: #2e7d32;
+}
+
+.route-wp-end {
+  background: #c0392b;
 }
 
 /* The dot that rides along the route at your current progress point. */

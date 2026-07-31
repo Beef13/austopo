@@ -5,6 +5,7 @@ import type { Feature, FeatureCollection } from 'geojson'
 import {
   formatDistance,
   formatElevation,
+  haversine,
   nearestOnPath,
   pathLength,
   pointAtDistance,
@@ -42,6 +43,48 @@ const SOURCE_ID = 'route'
 const LINE_LAYER = 'route-line'
 const POINT_LAYER = 'route-points'
 
+const ROUTE_COLOR = '#e5322d'
+const ROUTE_CLEAR = 'rgba(229,50,45,0)'
+
+// A `line-gradient` expression that shows the route solid up to `p` (0..1 along
+// the line) and transparent after. Animating `p` via setPaintProperty draws the
+// line on the GPU — smooth, and far cheaper than re-feeding geometry with
+// setData every frame (which round-trips through the tiling worker and stutters).
+type GradientExpr = maplibregl.ExpressionSpecification
+function revealGradient(p: number): GradientExpr {
+  const a = Math.max(0.0001, Math.min(1, p))
+  if (a >= 0.999) {
+    return ['interpolate', ['linear'], ['line-progress'], 0, ROUTE_COLOR, 1, ROUTE_COLOR]
+  }
+  const b = Math.min(a + 0.0001, 1)
+  if (b >= 1) {
+    return [
+      'interpolate',
+      ['linear'],
+      ['line-progress'],
+      0,
+      ROUTE_COLOR,
+      a,
+      ROUTE_COLOR,
+      1,
+      ROUTE_CLEAR,
+    ]
+  }
+  return [
+    'interpolate',
+    ['linear'],
+    ['line-progress'],
+    0,
+    ROUTE_COLOR,
+    a,
+    ROUTE_COLOR,
+    b,
+    ROUTE_CLEAR,
+    1,
+    ROUTE_CLEAR,
+  ]
+}
+
 // How far off the line (m) counts as "off route", and how close to the end (m)
 // counts as arrived.
 const OFF_ROUTE_M = 40
@@ -59,6 +102,24 @@ function locationMarkerEl(): HTMLElement {
   el.className = 'user-location-marker'
   el.innerHTML =
     '<span class="user-location-pulse"></span><span class="user-location-dot"></span>'
+  return el
+}
+
+// How many leading vertices two polylines share (within a few metres). Used to
+// tell an append (draw the new tail) from an edit (just redraw).
+function commonPrefixLen(a: LngLat[], b: LngLat[]): number {
+  const n = Math.min(a.length, b.length)
+  let i = 0
+  while (i < n && haversine(a[i], b[i]) < 2) i++
+  return i
+}
+
+// A numbered waypoint badge. It's a pointer-events:none overlay so it never
+// intercepts the map interactions that drive drag / insert / delete.
+function waypointBadgeEl(label: string, kind: string): HTMLElement {
+  const el = document.createElement('div')
+  el.className = `route-wp-badge route-wp-${kind}`
+  el.textContent = label
   return el
 }
 
@@ -87,7 +148,9 @@ export default function RouteTool({ map }: RouteToolProps) {
   const [open, setOpen] = useState(false)
   const [waypoints, setWaypoints] = useState<LngLat[]>([])
   const [snappedLine, setSnappedLine] = useState<LngLat[]>([])
-  const [snappedAnchors, setSnappedAnchors] = useState<LngLat[]>([])
+  // The waypoints the current snappedLine was built from, so we only project a
+  // waypoint onto the line once the line actually covers it.
+  const [snappedFor, setSnappedFor] = useState<LngLat[]>([])
   const [snap, setSnap] = useState(true)
   const [activityId, setActivityId] = useState<ActivityId>('hiking')
   const [routing, setRouting] = useState(false)
@@ -105,6 +168,16 @@ export default function RouteTool({ map }: RouteToolProps) {
   const watchIdRef = useRef<number | null>(null)
   const gpsMarkerRef = useRef<maplibregl.Marker | null>(null)
   const progressMarkerRef = useRef<maplibregl.Marker | null>(null)
+  const wpMarkersRef = useRef<maplibregl.Marker[]>([])
+  // The line geometry currently on the map, the in-flight rAF id, and the reveal
+  // animation's current progress (0..1) plus the total length that fraction is
+  // measured against — so a reveal can continue seamlessly when the geometry it's
+  // drawing changes mid-flight (e.g. the straight stub settling onto the snapped
+  // path).
+  const drawnLineRef = useRef<LngLat[]>([])
+  const drawAnimRef = useRef<number | null>(null)
+  const progRef = useRef(1)
+  const animTotalRef = useRef(0)
   const openRef = useRef(open)
   openRef.current = open
   const waypointsRef = useRef(waypoints)
@@ -118,22 +191,33 @@ export default function RouteTool({ map }: RouteToolProps) {
   const profileRef = useRef(activity.profile)
   profileRef.current = activity.profile
 
-  // The line to draw / measure / profile: the snapped path when it's ready,
-  // otherwise the straight anchors (instant feedback while routing).
+  // The line to draw / measure / profile. Snapping off: the straight waypoints.
+  // Snapping on: the snapped path once it's ready (empty while the first segment
+  // is still routing). We deliberately don't show a straight stub to the newest
+  // point first — the line just draws in as the real snapped path when it lands.
   const displayLine = useMemo<LngLat[]>(
-    () => (snap && snappedLine.length >= 2 ? snappedLine : waypoints),
+    () => (snap ? snappedLine : waypoints),
     [snap, snappedLine, waypoints],
   )
 
-  // Where to draw the draggable dots: snapped onto the line when routing is
-  // active (so they never float off-trail), else at the raw tap positions.
-  const displayAnchors = useMemo<LngLat[]>(
-    () =>
-      snap && snappedAnchors.length === waypoints.length && waypoints.length > 0
-        ? snappedAnchors
-        : waypoints,
-    [snap, snappedAnchors, waypoints],
-  )
+  // Where to draw the draggable dots / numbered badges: they must always sit on
+  // the line the user sees. With snapping off, the anchors are the line's own
+  // vertices. With snapping on, project each raw waypoint onto the drawn line so
+  // a badge can never float off-trail — this is robust to partially-snapped
+  // routes and to segments that fell back to a straight line (e.g. an off-road
+  // tap the router couldn't reach), unlike trusting the snapped endpoints alone.
+  const displayAnchors = useMemo<LngLat[]>(() => {
+    if (!snap || waypoints.length === 0) return waypoints
+    if (snappedLine.length < 2) return waypoints
+    // Only project waypoints the current snapped line covers. A just-added or
+    // just-moved point isn't on the (still-stale) line yet, so show it at the
+    // tap location until the fresh snap arrives — otherwise it would flash onto
+    // the old path and then jump to the click.
+    const known = new Set(snappedFor.map((p) => `${p[0]},${p[1]}`))
+    return waypoints.map((w) =>
+      known.has(`${w[0]},${w[1]}`) ? nearestOnPath(snappedLine, w).point : w,
+    )
+  }, [snap, snappedLine, snappedFor, waypoints])
 
   // Create the route source + layers once.
   useEffect(() => {
@@ -141,6 +225,9 @@ export default function RouteTool({ map }: RouteToolProps) {
       if (map.getSource(SOURCE_ID)) return
       map.addSource(SOURCE_ID, {
         type: 'geojson',
+        // lineMetrics lets the line layer use `line-progress` for the draw-in
+        // gradient animation.
+        lineMetrics: true,
         data: routeFeatures([], []),
       })
       map.addLayer({
@@ -150,7 +237,8 @@ export default function RouteTool({ map }: RouteToolProps) {
         filter: ['==', ['geometry-type'], 'LineString'],
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': '#e5322d',
+          'line-color': ROUTE_COLOR,
+          'line-gradient': revealGradient(1),
           'line-width': 4,
           'line-opacity': 0.9,
         },
@@ -160,17 +248,14 @@ export default function RouteTool({ map }: RouteToolProps) {
         type: 'circle',
         source: SOURCE_ID,
         filter: ['==', ['geometry-type'], 'Point'],
+        // Invisible hit-target: the visible waypoint is a numbered DOM badge
+        // (see the badge sync effect). Sized to match the badge so taps near
+        // its edge still register for drag/delete, and queryable even at zero
+        // opacity since queries are geometry-based.
         paint: {
-          'circle-radius': 5,
-          'circle-color': [
-            'match',
-            ['get', 'kind'],
-            'start', '#2e7d32',
-            'end', '#c0392b',
-            '#ffffff',
-          ],
-          'circle-stroke-width': 2,
-          'circle-stroke-color': '#e5322d',
+          'circle-radius': 11,
+          'circle-color': '#000000',
+          'circle-opacity': 0,
         },
       })
     }
@@ -182,11 +267,155 @@ export default function RouteTool({ map }: RouteToolProps) {
     }
   }, [map])
 
-  // Push waypoint / line changes to the map source.
+  // Push line + hit-target geometry to the source and drive the draw-in reveal.
   useEffect(() => {
     const src = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined
-    src?.setData(routeFeatures(displayAnchors, displayLine))
+    if (!src) return
+    if (import.meta.env.DEV) {
+      ;(window as unknown as { __routeLine?: LngLat[] }).__routeLine = displayLine
+    }
+
+    const prev = drawnLineRef.current
+    const next = displayLine
+    const total = pathLength(next)
+
+    const setGradient = (p: number) => {
+      progRef.current = p
+      if (map.getLayer(LINE_LAYER)) {
+        map.setPaintProperty(LINE_LAYER, 'line-gradient', revealGradient(p))
+      }
+      if (import.meta.env.DEV) {
+        ;(window as unknown as { __drawProgress?: number }).__drawProgress = p
+      }
+    }
+    const stop = () => {
+      if (drawAnimRef.current !== null) {
+        cancelAnimationFrame(drawAnimRef.current)
+        drawAnimRef.current = null
+      }
+    }
+    const finish = () => {
+      stop()
+      drawnLineRef.current = next
+      animTotalRef.current = total
+      setGradient(1)
+    }
+
+    // Always keep the source's geometry + invisible hit-targets current.
+    src.setData(routeFeatures(displayAnchors, next))
+
+    const animating = drawAnimRef.current !== null
+    // Vertices shared at the front stay put; the tail is what changed.
+    const k = commonPrefixLen(prev, next)
+    const identical = prev.length === next.length && k === next.length
+
+    // Nothing about the line changed (e.g. only the badges/anchors moved): leave
+    // an in-flight reveal alone, otherwise make sure the line is fully shown.
+    if (identical) {
+      if (!animating) setGradient(1)
+      return
+    }
+
+    const reduceMotion = window.matchMedia?.(
+      '(prefers-reduced-motion: reduce)',
+    ).matches
+    if (reduceMotion || total < 1) {
+      finish()
+      return
+    }
+
+    const sharedLen = k > 0 ? pathLength(next.slice(0, k)) : 0
+    // Reshapes that aren't a tail edit (reverse, activity change, mid-point drag)
+    // share little of the front — snap those straight to full, don't draw them.
+    const prevLen = pathLength(prev)
+    const tailEdit = prev.length < 2 || sharedLen >= Math.min(prevLen, total) * 0.5
+    if (!tailEdit) {
+      finish()
+      return
+    }
+
+    // Where to start the reveal from (metres along the new line). If a reveal is
+    // already running, continue from however far it had drawn (converted from the
+    // old total) so a straight stub settling onto the snapped path keeps drawing
+    // instead of restarting; otherwise start at the junction with the unchanged
+    // front.
+    const drawnAbs = animating ? progRef.current * animTotalRef.current : 0
+    const fromAbs = Math.min(total, Math.max(sharedLen, drawnAbs))
+    if (total - fromAbs < 1) {
+      finish()
+      return
+    }
+    const startFrac = fromAbs / total
+
+    stop()
+    drawnLineRef.current = next
+    animTotalRef.current = total
+    setGradient(startFrac)
+
+    // Draw pace: ~0.6 ms per metre, clamped 67–300 ms — snappy, so the line
+    // keeps up with quick point placement.
+    const duration = Math.min(300, Math.max(67, (total - fromAbs) * 0.6))
+    const t0 = performance.now()
+    if (import.meta.env.DEV) {
+      ;(window as unknown as { __drawFrames?: number }).__drawFrames = 0
+    }
+    const step = (now: number) => {
+      const f = Math.min(1, (now - t0) / duration)
+      const eased = 1 - Math.pow(1 - f, 3)
+      setGradient(startFrac + (1 - startFrac) * eased)
+      if (import.meta.env.DEV) {
+        const w = window as unknown as { __drawFrames?: number }
+        w.__drawFrames = (w.__drawFrames ?? 0) + 1
+      }
+      if (f < 1) drawAnimRef.current = requestAnimationFrame(step)
+      else {
+        drawAnimRef.current = null
+        setGradient(1)
+      }
+    }
+    drawAnimRef.current = requestAnimationFrame(step)
   }, [map, displayAnchors, displayLine])
+
+  // Stop any in-flight draw animation on unmount.
+  useEffect(
+    () => () => {
+      if (drawAnimRef.current !== null) cancelAnimationFrame(drawAnimRef.current)
+    },
+    [],
+  )
+
+  // Keep the numbered badge markers in sync with the anchors.
+  useEffect(() => {
+    const markers = wpMarkersRef.current
+    const anchors = displayAnchors
+    anchors.forEach((p, i) => {
+      const kind = i === 0 ? 'start' : i === anchors.length - 1 ? 'end' : 'mid'
+      const label = String(i + 1)
+      let m = markers[i]
+      if (!m) {
+        m = new maplibregl.Marker({ element: waypointBadgeEl(label, kind) })
+          .setLngLat(p)
+          .addTo(map)
+        markers[i] = m
+      } else {
+        m.setLngLat(p)
+        const el = m.getElement()
+        el.className = `route-wp-badge route-wp-${kind}`
+        el.textContent = label
+      }
+    })
+    for (let i = anchors.length; i < markers.length; i++) markers[i]?.remove()
+    markers.length = anchors.length
+  }, [map, displayAnchors])
+
+  // Remove all badge markers on unmount.
+  useEffect(
+    () => () => {
+      wpMarkersRef.current.forEach((m) => m.remove())
+      wpMarkersRef.current = []
+    },
+    [],
+  )
 
   // Snap anchors to paths (debounced) whenever they change, snap is on, or the
   // activity's routing profile changes. Segments are cached so only the edited
@@ -194,31 +423,35 @@ export default function RouteTool({ map }: RouteToolProps) {
   useEffect(() => {
     if (!snap || waypoints.length < 2) {
       setSnappedLine([])
-      setSnappedAnchors([])
+      setSnappedFor([])
       setRouting(false)
       return
     }
     const controller = new AbortController()
+    const snapshot = waypoints
     setRouting(true)
     const timer = setTimeout(async () => {
       try {
         const result = await snapRoute(
-          waypoints,
+          snapshot,
           activity.profile,
           routeCache.current,
           controller.signal,
         )
         setSnappedLine(result.line)
-        setSnappedAnchors(result.anchors)
+        setSnappedFor(snapshot)
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           setSnappedLine([])
-          setSnappedAnchors([])
+          setSnappedFor([])
         }
       } finally {
         setRouting(false)
       }
-    }, 400)
+      // Short debounce: long enough to coalesce rapid taps, short enough that
+      // the snapped path settles onto the trail almost immediately after the
+      // instant straight stub is shown.
+    }, 80)
     return () => {
       controller.abort()
       clearTimeout(timer)
@@ -318,6 +551,15 @@ export default function RouteTool({ map }: RouteToolProps) {
         live = waypointsRef.current.slice()
         map.dragPan.disable()
         setCursor('grabbing')
+        // Cancel any in-flight draw and show the whole line so dragging never
+        // reveals a half-drawn path.
+        if (drawAnimRef.current !== null) {
+          cancelAnimationFrame(drawAnimRef.current)
+          drawAnimRef.current = null
+        }
+        if (map.getLayer(LINE_LAYER)) {
+          map.setPaintProperty(LINE_LAYER, 'line-gradient', revealGradient(1))
+        }
       }
     }
 
@@ -329,6 +571,9 @@ export default function RouteTool({ map }: RouteToolProps) {
       e.preventDefault()
       live[dragIndex] = [e.lngLat.lng, e.lngLat.lat]
       src()?.setData(routeFeatures(live, live))
+      // Glue the numbered badge to the dot as it's dragged (state only commits
+      // on release, so update this one imperatively for live feedback).
+      wpMarkersRef.current[dragIndex]?.setLngLat([e.lngLat.lng, e.lngLat.lat])
     }
 
     const onUp = (e: maplibregl.MapMouseEvent | maplibregl.MapTouchEvent) => {
@@ -426,7 +671,9 @@ export default function RouteTool({ map }: RouteToolProps) {
       } finally {
         setElevLoading(false)
       }
-    }, 700)
+      // DEM tiles are cached and quick, so a short debounce keeps the profile
+      // updating snappily as points are placed.
+    }, 180)
     return () => {
       controller.abort()
       clearTimeout(timer)
@@ -745,8 +992,19 @@ export default function RouteTool({ map }: RouteToolProps) {
           </div>
 
           <div className="route-elev">
-            {elevLoading && <div className="route-elev-msg">Loading elevation&hellip;</div>}
-            {elevError && (
+            {/* Keep the current chart on screen while the next profile computes so
+                it updates in place instead of vanishing and popping back. */}
+            {profile && (
+              <div
+                className={`route-elev-chart${elevLoading ? ' route-elev-updating' : ''}`}
+              >
+                <ElevationProfile data={profile} onScrub={setScrubDist} />
+              </div>
+            )}
+            {!profile && elevLoading && (
+              <div className="route-elev-msg">Loading elevation&hellip;</div>
+            )}
+            {!profile && !elevLoading && elevError && (
               <div className="route-elev-msg">
                 Elevation unavailable
                 <button
@@ -758,10 +1016,7 @@ export default function RouteTool({ map }: RouteToolProps) {
                 </button>
               </div>
             )}
-            {!elevLoading && !elevError && profile && (
-              <ElevationProfile data={profile} onScrub={setScrubDist} />
-            )}
-            {!elevLoading && !elevError && !profile && waypoints.length < 2 && (
+            {!profile && !elevLoading && !elevError && waypoints.length < 2 && (
               <div className="route-elev-msg">Add at least 2 points for an elevation profile</div>
             )}
           </div>

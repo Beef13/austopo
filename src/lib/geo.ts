@@ -114,6 +114,26 @@ export function nearestOnPath(
   return { along: best.along, point: best.point, offset: Math.sqrt(best.d2) }
 }
 
+// The leading portion of a polyline up to `dist` metres, with the final point
+// interpolated exactly at `dist`. Used to animate "drawing" a line.
+export function takeAlong(points: LngLat[], dist: number): LngLat[] {
+  if (points.length === 0) return []
+  if (points.length === 1 || dist <= 0) return [points[0]]
+  const out: LngLat[] = [points[0]]
+  let acc = 0
+  for (let i = 1; i < points.length; i++) {
+    const seg = haversine(points[i - 1], points[i])
+    if (acc + seg >= dist) {
+      const t = seg === 0 ? 0 : (dist - acc) / seg
+      out.push(lerp(points[i - 1], points[i], t))
+      return out
+    }
+    acc += seg
+    out.push(points[i])
+  }
+  return out
+}
+
 // The [lng, lat] a given distance (metres) along a polyline. Clamps to the
 // endpoints for out-of-range distances.
 export function pointAtDistance(points: LngLat[], target: number): LngLat {

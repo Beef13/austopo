@@ -1,8 +1,12 @@
 import { sampleAlongPath, type LngLat } from './geo'
+import { sampleElevations } from './terrain'
 
-// Elevation data via the free, CORS-enabled Open-Meteo Elevation API
-// (https://open-meteo.com/en/docs/elevation-api). No API key required; up to
-// 100 coordinates per request, so we resample long routes down to 100 points.
+// Elevation data. Primary source is the local AWS "terrarium" DEM tiles (see
+// terrain.ts) — no API key, no rate limits, cached by the service worker so it
+// works offline, and it's the same source as the live centre readout so the
+// numbers always agree. Open-Meteo's elevation API is kept only as a fallback
+// for the rare case the DEM tiles can't be fetched (offline with an empty
+// cache), since relying on it alone made the profile flaky under load.
 
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/elevation'
 const MAX_SAMPLES = 100
@@ -108,14 +112,25 @@ export async function fetchElevationProfile(
   if (points.length < 2) return null
 
   const { points: sampled, distances } = sampleAlongPath(points, MAX_SAMPLES)
-  const lats = sampled.map((p) => p[1].toFixed(6)).join(',')
-  const lngs = sampled.map((p) => p[0].toFixed(6)).join(',')
-  const url = `${OPEN_METEO_URL}?latitude=${lats}&longitude=${lngs}`
 
-  const raw = await requestElevations(url, signal)
-  if (raw.length === 0) return null
+  // Primary: local DEM tiles. Reliable and offline-capable.
+  let elevations: number[] | null = null
+  try {
+    const dem = await sampleElevations(sampled, signal)
+    elevations = fillGaps(dem)
+  } catch (err) {
+    if (signal?.aborted || (err as Error).name === 'AbortError') throw err
+    elevations = null
+  }
 
-  const elevations = fillGaps(raw)
+  // Fallback: Open-Meteo, only if the DEM yielded nothing at all.
+  if (!elevations) {
+    const lats = sampled.map((p) => p[1].toFixed(6)).join(',')
+    const lngs = sampled.map((p) => p[0].toFixed(6)).join(',')
+    const url = `${OPEN_METEO_URL}?latitude=${lats}&longitude=${lngs}`
+    const raw = await requestElevations(url, signal)
+    if (raw.length > 0) elevations = fillGaps(raw)
+  }
   if (!elevations) return null
 
   const samples: ElevationSample[] = elevations.map((elevation, i) => ({

@@ -31,14 +31,15 @@ await page.waitForFunction(
 )
 const e1 = await elevText()
 
-// Pan a long way by dragging the map, then read again shortly after.
-const box = await page.locator('canvas.maplibregl-canvas').boundingBox()
-await page.mouse.move(box.x + 500, box.y + 350)
-await page.mouse.down()
-await page.mouse.move(box.x + 250, box.y + 180, { steps: 12 })
-await page.mouse.move(box.x + 120, box.y + 90, { steps: 12 })
-await page.mouse.up()
-await page.waitForTimeout(1200)
+// Jump a long way to clearly different terrain via the map API, and make sure
+// the cursor isn't probing (so we read the centre), then read again.
+await page.evaluate(() => {
+  document
+    .querySelector('canvas.maplibregl-canvas')
+    ?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+  window.__map?.jumpTo({ center: [148.263, -36.456], zoom: 13 }) // Mt Kosciuszko area
+})
+await page.waitForTimeout(1500)
 const e2 = await elevText()
 
 await browser.close()

@@ -1,4 +1,4 @@
-import type { LngLat } from './geo'
+import { haversine, pathLength, type LngLat } from './geo'
 
 // Path-snapping via BRouter's free public server (https://brouter.de). It's
 // CORS-enabled, needs no API key, and covers the whole planet with OSM-based
@@ -78,6 +78,46 @@ export type SnapResult = {
   anchors: LngLat[]
 }
 
+// Consecutive BRouter segments are each an independent shortest path, so at a
+// shared waypoint the approach and departure can reuse the same road in
+// opposite directions — an unwanted little "out-and-back" spur. When stitching
+// segments we detect that reversed overlap at the junction and cut it, so the
+// route doesn't tread back on itself. A deliberate detour (a genuine dead-end
+// waypoint) produces a long overlap, so anything longer than this stays.
+const MAX_SPUR_TRIM_M = 150
+// Two vertices within this distance are treated as the same node.
+const JUNCTION_TOL_M = 3
+
+// Append `seg` to `line`, trimming a short reversed overlap at the junction.
+// Exported for unit testing.
+export function stitchSegment(line: LngLat[], seg: LngLat[]): void {
+  if (seg.length === 0) return
+  if (line.length === 0) {
+    line.push(...seg)
+    return
+  }
+  // How many leading points of `seg` retrace the tail of `line` (the junction
+  // vertex always matches; a spur retraces one or more vertices further).
+  let m = 0
+  while (
+    m < seg.length &&
+    line.length - 1 - m >= 0 &&
+    haversine(seg[m], line[line.length - 1 - m]) < JUNCTION_TOL_M
+  ) {
+    m++
+  }
+  // Trim only a partial overlap (a stub at the junction) that's short. If the
+  // WHOLE segment retraces (m === seg.length) it's a deliberate there-and-back
+  // to a revisited waypoint (e.g. the "Out & back" tool), so leave it intact.
+  if (m >= 2 && m < seg.length && pathLength(seg.slice(0, m)) <= MAX_SPUR_TRIM_M) {
+    // Drop the retraced tail of `line`, then continue where the paths diverge.
+    line.length -= m - 1
+    for (let k = m; k < seg.length; k++) line.push(seg[k])
+  } else {
+    for (let k = 1; k < seg.length; k++) line.push(seg[k])
+  }
+}
+
 // Snap a sequence of anchor waypoints to paths, segment by segment. Successful
 // segments are cached; a segment that fails to route (no nearby path, provider
 // down, offline) falls back to a straight line so the route is never broken.
@@ -106,15 +146,11 @@ export async function snapRoute(
         seg = [a, b] // straight fallback; don't cache so we can retry later
       }
     }
-    // Drop the shared junction vertex when appending later segments; the dot for
-    // each anchor sits on the segment endpoint, guaranteeing it's on the line.
-    if (i === 0) {
-      line.push(...seg)
-      anchors.push(seg[0])
-    } else {
-      line.push(...seg.slice(1))
-    }
+    if (i === 0) anchors.push(seg[0])
     anchors.push(seg[seg.length - 1])
+    // Stitch onto the running line, cutting any short reversed overlap so the
+    // route never needlessly doubles back on itself at a junction.
+    stitchSegment(line, seg)
   }
   return { line, anchors }
 }
